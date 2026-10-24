@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { navigate } from '../lib/router';
 import { Icon } from '../components/Icon';
 import { ServiceCard } from '../components/ServiceCard';
-import { LinkButton } from '../components/ui';
-import type { ApiError, ProjectOverview } from '../lib/api';
+import { Button, LinkButton } from '../components/ui';
+import { ApiError, deleteProject, type ProjectOverview } from '../lib/api';
 import { toServiceView, type ServiceState } from '../lib/view';
 
 type Filter = 'all' | ServiceState;
@@ -22,10 +23,22 @@ interface DashboardPageProps {
   error: ApiError | null;
   loading: boolean;
   reload: () => void;
+  onDeleted: () => void;
 }
 
-export function DashboardPage({ projectId, overview, error, loading, reload }: DashboardPageProps) {
+export function DashboardPage({
+  projectId,
+  overview,
+  error,
+  loading,
+  reload,
+  onDeleted,
+}: DashboardPageProps) {
   const [filter, setFilter] = useState<Filter>('all');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const services = (overview?.services ?? []).map(toServiceView);
   const counts: Record<Filter, number> = {
@@ -82,8 +95,74 @@ export function DashboardPage({ projectId, overview, error, loading, reload }: D
             <Icon name="plus" />
             New service
           </LinkButton>
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmOpen(true);
+              setConfirmText('');
+              setDeleteError(null);
+            }}
+            className="font-mono text-mono-xs text-text-dim transition-colors hover:text-red"
+          >
+            delete project
+          </button>
         </div>
       </div>
+
+      {confirmOpen ? (
+        <div className="border-b border-red/30 bg-red/5 px-6 py-3">
+          <div className="mx-auto flex w-full max-w-[600px] flex-col gap-2">
+            <p className="text-ui-sm">
+              Delete{' '}
+              <span className="font-mono text-text">{overview?.project.name ?? projectId}</span>?
+              Every service, deployment and variable in it is removed, and its containers are
+              stopped. This cannot be undone.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={confirmText}
+                onChange={(event) => setConfirmText(event.target.value)}
+                placeholder={`type the project name to confirm`}
+                aria-label="Type the project name to confirm deletion"
+                className="h-7 w-[260px] rounded border border-line bg-surface-2 px-2 font-mono text-mono-xs"
+              />
+              <Button
+                variant="primary"
+                className="border-red bg-red text-canvas hover:bg-red/90"
+                disabled={deleting || confirmText.trim() !== (overview?.project.name ?? projectId)}
+                onClick={async () => {
+                  setDeleting(true);
+                  setDeleteError(null);
+                  try {
+                    await deleteProject(projectId);
+                    onDeleted();
+                    navigate('/');
+                  } catch (cause) {
+                    setDeleteError(
+                      cause instanceof ApiError
+                        ? `${cause.code} · ${cause.message}`
+                        : String(cause),
+                    );
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? 'Deleting…' : 'Delete project'}
+              </Button>
+              <button
+                type="button"
+                onClick={() => setConfirmOpen(false)}
+                className="text-ui-sm text-text-dim hover:text-text"
+              >
+                Cancel
+              </button>
+              {deleteError ? (
+                <span className="font-mono text-mono-xs text-red">{deleteError}</span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="relative flex flex-1 flex-col p-8">
         {loading && !overview ? (

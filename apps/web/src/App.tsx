@@ -122,6 +122,10 @@ export default function App() {
                   overview.reload();
                   projects.reload();
                 }}
+                onDeleted={() => {
+                  projects.reload();
+                  overview.reload();
+                }}
               />
             ) : null}
 

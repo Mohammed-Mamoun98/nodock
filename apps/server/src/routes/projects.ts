@@ -1,8 +1,17 @@
 import { and, asc, count, desc, eq, inArray } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import type { CaddyAdmin } from '../caddy/admin';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
+import type { DockerAdapter } from '../docker/adapter';
+import {
+  containerNamesFor,
+  reconcileRoutes,
+  serviceEnvIdsForEnvironment,
+  serviceEnvIdsForProject,
+  stopContainers,
+} from '../deploy/teardown';
 import { deployments, environments, projects, serviceEnvs, services } from '../db/schema';
 import { apiError, validationError } from '../http';
 import { slugify, uniqueValue } from '../lib/slug';
@@ -16,6 +25,8 @@ const createEnvironment = z.object({ name });
 export interface ProjectDeps {
   config: Config;
   db: Db;
+  docker?: DockerAdapter;
+  admin?: CaddyAdmin | null;
 }
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
@@ -25,7 +36,7 @@ export function serializeProject(row: typeof projects.$inferSelect) {
 }
 
 export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
-  const { db } = deps;
+  const { db, config } = deps;
 
   app.get('/api/projects', (c) => {
     const rows = db
@@ -192,19 +203,27 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
     return c.json({ project: serializeProject(updated) });
   });
 
-  app.delete('/api/projects/:id', (c) => {
-    const deleted = db
-      .delete(projects)
-      .where(eq(projects.id, c.req.param('id')))
-      .returning({ id: projects.id })
+  app.delete('/api/projects/:id', async (c) => {
+    const projectId = c.req.param('id');
+    const existing = db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.id, projectId))
       .get();
-
-    if (!deleted) {
+    if (!existing) {
       const { status, body } = apiError('not_found', 'Project not found', 404);
       return c.json(body, status);
     }
-    // Containers and routes for the deleted services are cleaned up in M5/M6;
-    // the rows cascade here, which is what the UI needs.
+
+    const serviceEnvIds = serviceEnvIdsForProject(db, projectId);
+    const names = containerNamesFor(db, serviceEnvIds);
+
+    db.delete(projects).where(eq(projects.id, projectId)).run();
+
+    // Routes first (a dead route is worse than a running container), then containers.
+    await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
+    await stopContainers(deps.docker, names);
+
     return c.body(null, 204);
   });
 
@@ -266,7 +285,7 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
     return c.json({ environment: { ...env, createdAt: iso(env.createdAt) } });
   });
 
-  app.delete('/api/environments/:id', (c) => {
+  app.delete('/api/environments/:id', async (c) => {
     const env = db
       .select()
       .from(environments)
@@ -285,7 +304,13 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
       return c.json(body, status);
     }
 
+    const names = containerNamesFor(db, serviceEnvIdsForEnvironment(db, env.id));
+
     db.delete(environments).where(eq(environments.id, env.id)).run();
+
+    await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
+    await stopContainers(deps.docker, names);
+
     return c.body(null, 204);
   });
 }

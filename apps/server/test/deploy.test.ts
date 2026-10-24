@@ -334,3 +334,93 @@ describe('deploy pipeline', () => {
     ).toContain('Cannot decrypt');
   });
 });
+
+async function signedInApp(options: {
+  docker: DockerAdapter;
+  admin: CaddyAdmin;
+  db: ReturnType<typeof testDb>['db'];
+}) {
+  const { createApp } = await import('../src/app');
+  const { SESSION_COOKIE } = await import('../src/auth/sessions');
+
+  const app = createApp({
+    config,
+    db: options.db,
+    docker: options.docker,
+    admin: options.admin,
+    github: {
+      authorizeUrl: () => 'https://github.com/login/oauth/authorize',
+      exchangeCode: async () => ({ accessToken: 'gho', scopes: ['repo', 'workflow'] }),
+      getUser: async () => ({ id: 1, login: 'mohammed', avatarUrl: null }),
+      listRepos: async () => ({ repos: [], hasMore: false }),
+      listBranches: async () => ['main'],
+    },
+  });
+
+  const start = await app.request('/auth/github');
+  const state = decodeURIComponent(
+    start.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith('nodock_oauth_state='))
+      ?.split(';')[0]
+      ?.split('=')[1] ?? '',
+  );
+  const callback = await app.request(`/auth/github/callback?code=abc&state=${state}`, {
+    headers: { cookie: `nodock_oauth_state=${state}` },
+  });
+  const cookie = `${SESSION_COOKIE}=${decodeURIComponent(
+    callback.headers
+      .getSetCookie()
+      .find((entry) => entry.startsWith(`${SESSION_COOKIE}=`))
+      ?.split(';')[0]
+      ?.split('=')[1] ?? '',
+  )}`;
+
+  const call = (path: string, init: RequestInit = {}) =>
+    app.request(path, {
+      ...init,
+      headers: {
+        cookie,
+        origin: 'https://panel.example.com',
+        'content-type': 'application/json',
+        ...(init.headers as Record<string, string> | undefined),
+      },
+    });
+
+  return { call };
+}
+
+describe('teardown', () => {
+  test('deleting a project stops its containers and drops its routes', async () => {
+    const { db } = testDb();
+    const { serviceEnv } = seed(db, { liveContainer: 'nodock-api-prod-abc12345' });
+    const { docker, calls } = fakeDocker();
+    const { admin, loads } = fakeAdmin();
+    const { call } = await signedInApp({ db, docker, admin });
+
+    const project = db.select().from(projects).get();
+
+    const response = await call(`/api/projects/${project?.id}`, { method: 'DELETE' });
+
+    expect(response.status).toBe(204);
+    expect(calls.stopped).toEqual(['nodock-api-prod-abc12345']);
+    expect(calls.removed).toEqual(['nodock-api-prod-abc12345']);
+    expect(db.select().from(services).all()).toHaveLength(0);
+    expect(db.select().from(serviceEnvs).all()).toHaveLength(0);
+    expect(loads.at(-1)).not.toContain('api.apps.example.com');
+    void serviceEnv;
+  });
+
+  test('deleting a service stops only its own containers', async () => {
+    const { db } = testDb();
+    const { service } = seed(db, { liveContainer: 'nodock-api-prod-abc12345' });
+    const { docker, calls } = fakeDocker();
+    const { admin } = fakeAdmin();
+    const { call } = await signedInApp({ db, docker, admin });
+
+    const response = await call(`/api/services/${service.id}`, { method: 'DELETE' });
+
+    expect(response.status).toBe(204);
+    expect(calls.stopped).toEqual(['nodock-api-prod-abc12345']);
+  });
+});

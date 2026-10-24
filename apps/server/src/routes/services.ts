@@ -1,8 +1,16 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { z } from 'zod';
+import type { CaddyAdmin } from '../caddy/admin';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
+import type { DockerAdapter } from '../docker/adapter';
+import {
+  containerNamesFor,
+  reconcileRoutes,
+  serviceEnvIdsForService,
+  stopContainers,
+} from '../deploy/teardown';
 import { deployments, environments, serviceEnvs, services } from '../db/schema';
 import { apiError, validationError } from '../http';
 import {
@@ -44,6 +52,8 @@ const patchServiceEnv = z.object({
 export interface ServiceDeps {
   config: Config;
   db: Db;
+  docker?: DockerAdapter;
+  admin?: CaddyAdmin | null;
 }
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
@@ -239,17 +249,25 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
     return c.json({ service: serializeService(updated) });
   });
 
-  app.delete('/api/services/:id', (c) => {
-    const deleted = db
-      .delete(services)
-      .where(eq(services.id, c.req.param('id')))
-      .returning({ id: services.id })
+  app.delete('/api/services/:id', async (c) => {
+    const serviceId = c.req.param('id');
+    const existing = db
+      .select({ id: services.id })
+      .from(services)
+      .where(eq(services.id, serviceId))
       .get();
-
-    if (!deleted) {
+    if (!existing) {
       const { status, body } = apiError('not_found', 'Service not found', 404);
       return c.json(body, status);
     }
+
+    const names = containerNamesFor(db, serviceEnvIdsForService(db, serviceId));
+
+    db.delete(services).where(eq(services.id, serviceId)).run();
+
+    await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
+    await stopContainers(deps.docker, names);
+
     return c.body(null, 204);
   });
 

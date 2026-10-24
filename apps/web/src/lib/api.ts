@@ -286,3 +286,11 @@ export function inspectRepo(owner: string, repo: string, ref?: string): Promise<
     `/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/inspect${query}`,
   );
 }
+
+export function deleteProject(projectId: string): Promise<void> {
+  return request<void>(`/api/projects/${projectId}`, { method: 'DELETE' });
+}
+
+export function deleteService(serviceId: string): Promise<void> {
+  return request<void>(`/api/services/${serviceId}`, { method: 'DELETE' });
+}

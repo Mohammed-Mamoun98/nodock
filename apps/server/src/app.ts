@@ -104,8 +104,8 @@ export function createApp(deps: AppDeps) {
     now: deps.now,
   });
   registerCiRoutes(app, { config, db, github: deps.github ?? createGitHubClient(), now: deps.now });
-  registerProjectRoutes(app, { config, db });
-  registerServiceRoutes(app, { config, db });
+  registerProjectRoutes(app, { config, db, docker, admin: admin ?? undefined });
+  registerServiceRoutes(app, { config, db, docker, admin: admin ?? undefined });
   registerVariableRoutes(app, { config, db });
 
   // Everything still unrouted behind the guard returns an explicit 501, not a silent SPA fallback.
