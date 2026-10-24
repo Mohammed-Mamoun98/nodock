@@ -94,3 +94,7 @@ the session works on both ports, but `:5173` must be in `ALLOWED_ORIGINS` for mu
 nodock mounts `/var/run/docker.sock`, which is root-equivalent on the host, and Caddy's admin
 API is unauthenticated. Keep the panel OAuth-gated + allowlisted, never publish port 3000,
 and split the Docker networks so app containers cannot reach the admin API.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
