@@ -8,5 +8,10 @@
     "start": "bun --env-file=../../.env --smol src/index.ts",
     "test": "bun test",
     "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.4.0",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0"
   }
 }

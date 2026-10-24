@@ -5,6 +5,7 @@ import type { Config } from './config';
 import type { Db } from './db/client';
 import { registerCaddyRoutes } from './caddy/routes';
 import { apiError } from './http';
+import { registerCiCallbacks, registerCiRoutes } from './routes/ci';
 import { registerGitHubRoutes } from './routes/github';
 import { registerProjectRoutes } from './routes/projects';
 import { registerServiceRoutes } from './routes/services';
@@ -59,6 +60,15 @@ export function createApp(deps: AppDeps) {
     });
   });
 
+  // CI callbacks authenticate with a repo-scoped bearer token, not a session, so
+  // they must be registered before the session guard.
+  registerCiCallbacks(app, {
+    config,
+    db,
+    github: deps.github ?? createGitHubClient(),
+    now: deps.now,
+  });
+
   // Caddy's on-demand TLS ask hook. Unauthenticated by design: Caddy cannot send
   // a session, which is why it answers only yes/no for known hosts.
   registerCaddyRoutes(app, { config, db });
@@ -78,6 +88,7 @@ export function createApp(deps: AppDeps) {
     github: deps.github ?? createGitHubClient(),
     now: deps.now,
   });
+  registerCiRoutes(app, { config, db, github: deps.github ?? createGitHubClient(), now: deps.now });
   registerProjectRoutes(app, { config, db });
   registerServiceRoutes(app, { config, db });
   registerVariableRoutes(app, { config, db });

@@ -1,3 +1,5 @@
+import { sealSecret } from '../ci/sealed-box';
+
 export interface GitHubUser {
   id: number;
   login: string;
@@ -31,7 +33,55 @@ export class GitHubHttpError extends Error {
   }
 }
 
-export interface GitHubClient {
+export interface GitHubRepoInfo {
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
+export interface GitHubFile {
+  sha: string;
+  content: string;
+}
+
+/**
+ * Operations the CI integration needs. Optional so existing fakes stay valid;
+ * the CI routes answer 501 when a client does not implement them.
+ */
+export interface GitHubOps {
+  getRepo?(accessToken: string, repoFullName: string): Promise<GitHubRepoInfo>;
+  getBranchHead?(accessToken: string, repoFullName: string, branch: string): Promise<string>;
+  getFile?(
+    accessToken: string,
+    repoFullName: string,
+    path: string,
+    ref: string,
+  ): Promise<GitHubFile | null>;
+  putFile?(
+    accessToken: string,
+    repoFullName: string,
+    input: { path: string; content: string; message: string; branch: string; sha?: string },
+  ): Promise<{ commitSha: string; contentSha: string }>;
+  putActionsSecret?(
+    accessToken: string,
+    repoFullName: string,
+    name: string,
+    value: string,
+  ): Promise<void>;
+  createWebhook?(
+    accessToken: string,
+    repoFullName: string,
+    input: { url: string; secret: string },
+  ): Promise<{ id: number }>;
+  dispatchBuild?(
+    accessToken: string,
+    repoFullName: string,
+    eventType: string,
+    payload: Record<string, string>,
+  ): Promise<void>;
+}
+
+export interface GitHubClient extends GitHubOps {
   authorizeUrl(input: { clientId: string; redirectUri: string; state: string }): string;
   exchangeCode(input: {
     clientId: string;
@@ -139,6 +189,192 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
       };
     },
 
+    async getRepo(accessToken, repoFullName) {
+      const response = await githubFetch(
+        fetchImpl,
+        `https://api.github.com/repos/${repoPath(repoFullName)}`,
+        accessToken,
+      );
+      const body = (await response.json()) as {
+        full_name: string;
+        default_branch?: string;
+        private?: boolean;
+      };
+      return {
+        fullName: body.full_name,
+        defaultBranch: body.default_branch ?? 'main',
+        private: body.private ?? false,
+      };
+    },
+
+    async getBranchHead(accessToken, repoFullName, branch) {
+      const response = await githubFetch(
+        fetchImpl,
+        `https://api.github.com/repos/${repoPath(repoFullName)}/commits/${encodeURIComponent(branch)}`,
+        accessToken,
+      );
+      const body = (await response.json()) as { sha?: string };
+      if (!body.sha) throw new GitHubHttpError(502, 'GitHub returned no commit for that branch');
+      return body.sha;
+    },
+
+    async getFile(accessToken, repoFullName, path, ref) {
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/contents/${path
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}?ref=${encodeURIComponent(ref)}`,
+        {
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'user-agent': 'nodock',
+          },
+        },
+      );
+
+      if (response.status === 404) return null;
+      if (!response.ok) throw new GitHubHttpError(response.status, 'Could not read that file');
+
+      const body = (await response.json()) as { sha: string; content?: string };
+      return {
+        sha: body.sha,
+        content: Buffer.from(body.content ?? '', 'base64').toString('utf8'),
+      };
+    },
+
+    async putFile(accessToken, repoFullName, input) {
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/contents/${input.path
+          .split('/')
+          .map(encodeURIComponent)
+          .join('/')}`,
+        {
+          method: 'PUT',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'content-type': 'application/json',
+            'user-agent': 'nodock',
+          },
+          body: JSON.stringify({
+            message: input.message,
+            content: Buffer.from(input.content, 'utf8').toString('base64'),
+            branch: input.branch,
+            ...(input.sha ? { sha: input.sha } : {}),
+          }),
+        },
+      );
+
+      if (response.status === 403 || response.status === 404) {
+        throw new GitHubHttpError(
+          403,
+          'GitHub refused the workflow commit — the token needs the `workflow` scope, and branch protection may block it',
+        );
+      }
+      if (!response.ok) {
+        throw new GitHubHttpError(
+          response.status,
+          `Could not commit the workflow (${response.status})`,
+        );
+      }
+
+      const body = (await response.json()) as { commit: { sha: string }; content: { sha: string } };
+      return { commitSha: body.commit.sha, contentSha: body.content.sha };
+    },
+
+    async putActionsSecret(accessToken, repoFullName, name, value) {
+      const keyResponse = await githubFetch(
+        fetchImpl,
+        `https://api.github.com/repos/${repoPath(repoFullName)}/actions/secrets/public-key`,
+        accessToken,
+      );
+      const keyBody = (await keyResponse.json()) as { key: string; key_id: string };
+
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/actions/secrets/${encodeURIComponent(name)}`,
+        {
+          method: 'PUT',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'content-type': 'application/json',
+            'user-agent': 'nodock',
+          },
+          body: JSON.stringify({
+            encrypted_value: sealSecret(value, keyBody.key),
+            key_id: keyBody.key_id,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new GitHubHttpError(
+          response.status,
+          `Could not store the Actions secret (${response.status}); Actions may be disabled for this repo`,
+        );
+      }
+    },
+
+    async createWebhook(accessToken, repoFullName, input) {
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/hooks`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'content-type': 'application/json',
+            'user-agent': 'nodock',
+          },
+          body: JSON.stringify({
+            name: 'web',
+            active: true,
+            events: ['push'],
+            config: {
+              url: input.url,
+              content_type: 'json',
+              secret: input.secret,
+              insecure_ssl: '0',
+            },
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new GitHubHttpError(
+          response.status,
+          `Could not create the webhook (${response.status})`,
+        );
+      }
+
+      const body = (await response.json()) as { id: number };
+      return { id: body.id };
+    },
+
+    async dispatchBuild(accessToken, repoFullName, eventType, payload) {
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/dispatches`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'content-type': 'application/json',
+            'user-agent': 'nodock',
+          },
+          body: JSON.stringify({ event_type: eventType, client_payload: payload }),
+        },
+      );
+
+      if (!response.ok) {
+        throw new GitHubHttpError(
+          response.status,
+          `repository_dispatch failed (${response.status}) — is the nodock workflow on the default branch?`,
+        );
+      }
+    },
+
     async listBranches(accessToken, repoFullName) {
       const url =
         'https://api.github.com/repos/' +
@@ -150,6 +386,10 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
       return body.map((branch) => branch.name);
     },
   };
+}
+
+function repoPath(repoFullName: string): string {
+  return repoFullName.split('/').map(encodeURIComponent).join('/');
 }
 
 interface GitHubRepoRaw {
