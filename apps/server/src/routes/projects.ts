@@ -5,6 +5,7 @@ import type { CaddyAdmin } from '../caddy/admin';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
 import type { DockerAdapter } from '../docker/adapter';
+import { cleanupReposIfUnused, reposForServiceIds } from '../deploy/repo-cleanup';
 import {
   containerNamesFor,
   reconcileRoutes,
@@ -12,6 +13,7 @@ import {
   serviceEnvIdsForProject,
   stopContainers,
 } from '../deploy/teardown';
+import type { GitHubClient } from '../auth/github';
 import { deployments, environments, projects, serviceEnvs, services } from '../db/schema';
 import { apiError, validationError } from '../http';
 import { slugify, uniqueValue } from '../lib/slug';
@@ -27,6 +29,7 @@ export interface ProjectDeps {
   db: Db;
   docker?: DockerAdapter;
   admin?: CaddyAdmin | null;
+  github?: GitHubClient;
 }
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
@@ -215,6 +218,13 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
       return c.json(body, status);
     }
 
+    const serviceIds = db
+      .select({ id: services.id })
+      .from(services)
+      .where(eq(services.projectId, projectId))
+      .all()
+      .map((row) => row.id);
+    const affectedRepos = reposForServiceIds(db, serviceIds);
     const serviceEnvIds = serviceEnvIdsForProject(db, projectId);
     const names = containerNamesFor(db, serviceEnvIds);
 
@@ -223,6 +233,10 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
     // Routes first (a dead route is worse than a running container), then containers.
     await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
     await stopContainers(deps.docker, names);
+
+    if (deps.github) {
+      await cleanupReposIfUnused({ config, db, github: deps.github }, affectedRepos);
+    }
 
     return c.body(null, 204);
   });

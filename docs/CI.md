@@ -72,6 +72,20 @@ grants nothing else.
 | `out_of_date` | the file matches what we wrote, but nodock ships a newer template |
 | `modified`    | the file changed (edited or deleted) since nodock wrote it        |
 
+## What deleting a project or service does (and does not) touch
+
+| In nodock                                                                                                                               | In your GitHub repo                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| containers stopped and removed                                                                                                          | `.github/workflows/nodock.yml` **stays** — never auto-deleted |
+| Caddy routes dropped                                                                                                                    | —                                                             |
+| rows deleted (project, envs, services, deployments, variables)                                                                          | —                                                             |
+| when it was the last service for that repo: the push webhook, the `NODOCK_CI_TOKEN` Actions secret and the `repo_hooks` row are revoked | the secret disappears from Settings → Actions secrets         |
+
+The workflow file is deliberately left alone: nodock does not own your repository, and
+committing a deletion on a project delete is destructive and surprising. Delete it yourself if
+you want it gone; it does nothing without a dispatch, since its only trigger is
+`repository_dispatch`.
+
 ## Known gap: no commit checks
 
 `repository_dispatch` runs the workflow from the **default branch**, so the run belongs to that

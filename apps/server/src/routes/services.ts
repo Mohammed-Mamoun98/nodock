@@ -5,12 +5,14 @@ import type { CaddyAdmin } from '../caddy/admin';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
 import type { DockerAdapter } from '../docker/adapter';
+import { cleanupReposIfUnused } from '../deploy/repo-cleanup';
 import {
   containerNamesFor,
   reconcileRoutes,
   serviceEnvIdsForService,
   stopContainers,
 } from '../deploy/teardown';
+import type { GitHubClient } from '../auth/github';
 import { deployments, environments, serviceEnvs, services } from '../db/schema';
 import { apiError, validationError } from '../http';
 import {
@@ -54,6 +56,7 @@ export interface ServiceDeps {
   db: Db;
   docker?: DockerAdapter;
   admin?: CaddyAdmin | null;
+  github?: GitHubClient;
 }
 
 const iso = (date: Date | null) => (date ? date.toISOString() : null);
@@ -261,12 +264,21 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
       return c.json(body, status);
     }
 
+    const repoFullName = db
+      .select({ repoFullName: services.repoFullName })
+      .from(services)
+      .where(eq(services.id, serviceId))
+      .get()?.repoFullName;
     const names = containerNamesFor(db, serviceEnvIdsForService(db, serviceId));
 
     db.delete(services).where(eq(services.id, serviceId)).run();
 
     await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
     await stopContainers(deps.docker, names);
+
+    if (deps.github && repoFullName) {
+      await cleanupReposIfUnused({ config, db, github: deps.github }, [repoFullName]);
+    }
 
     return c.body(null, 204);
   });

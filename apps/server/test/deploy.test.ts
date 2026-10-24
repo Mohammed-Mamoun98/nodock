@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
+import type { GitHubClient } from '../src/auth/github';
 import type { CaddyAdmin } from '../src/caddy/admin';
 import { renderCaddyfile } from '../src/caddy/render';
 import { loadConfig } from '../src/config';
@@ -7,6 +8,7 @@ import {
   deployments,
   environments,
   projects,
+  repoHooks,
   serviceEnvs,
   services,
   variables,
@@ -474,6 +476,7 @@ async function signedInApp(options: {
   docker: DockerAdapter;
   admin: CaddyAdmin;
   db: ReturnType<typeof testDb>['db'];
+  github?: GitHubClient;
 }) {
   const { createApp } = await import('../src/app');
   const { SESSION_COOKIE } = await import('../src/auth/sessions');
@@ -483,7 +486,7 @@ async function signedInApp(options: {
     db: options.db,
     docker: options.docker,
     admin: options.admin,
-    github: {
+    github: options.github ?? {
       authorizeUrl: () => 'https://github.com/login/oauth/authorize',
       exchangeCode: async () => ({ accessToken: 'gho', scopes: ['repo', 'workflow'] }),
       getUser: async () => ({ id: 1, login: 'mohammed', avatarUrl: null }),
@@ -557,5 +560,80 @@ describe('teardown', () => {
 
     expect(response.status).toBe(204);
     expect(calls.stopped).toEqual(['nodock-api-prod-abc12345']);
+  });
+});
+
+describe('repo cleanup on delete', () => {
+  function fakeRepoOps(existing: { hookId?: number } = {}) {
+    const calls: string[] = [];
+    const github = {
+      authorizeUrl: () => 'https://github.com/login/oauth/authorize',
+      exchangeCode: async () => ({ accessToken: 'gho', scopes: ['repo', 'workflow'] }),
+      getUser: async () => ({ id: 1, login: 'mohammed', avatarUrl: null }),
+      listRepos: async () => ({ repos: [], hasMore: false }),
+      listBranches: async () => ['main'],
+      deleteWebhook: async (_token: string, repo: string, hookId: number) => {
+        calls.push(`webhook ${repo} #${hookId}`);
+        void existing;
+      },
+      deleteActionsSecret: async (_token: string, repo: string, name: string) => {
+        calls.push(`secret ${repo} ${name}`);
+      },
+    };
+    return { github, calls };
+  }
+
+  test('deleting the last service for a repo revokes the webhook and CI secret', async () => {
+    const { db } = testDb();
+    const { service } = seed(db, { liveContainer: 'nodock-api-prod-abc12345' });
+    db.insert(repoHooks)
+      .values({
+        repoFullName: 'mohammed/milo',
+        hookId: 99,
+        webhookSecretEnc: 'v1.x.y.z',
+        ciTokenHash: 'hash',
+        ciEnabledAt: new Date(),
+      })
+      .run();
+
+    const { docker } = fakeDocker();
+    const { admin } = fakeAdmin();
+    const { github, calls } = fakeRepoOps();
+    const { call } = await signedInApp({ db, docker, admin, github });
+
+    const response = await call(`/api/services/${service.id}`, { method: 'DELETE' });
+
+    expect(response.status).toBe(204);
+    expect(calls).toEqual(['webhook mohammed/milo #99', 'secret mohammed/milo NODOCK_CI_TOKEN']);
+    expect(db.select().from(repoHooks).all()).toHaveLength(0);
+  });
+
+  test('a repo still used by another service keeps its credentials', async () => {
+    const { db } = testDb();
+    const { service } = seed(db, { liveContainer: 'nodock-api-prod-abc12345' });
+    // second service on the same repo
+    const other = db
+      .insert(services)
+      .values({
+        projectId: service.projectId,
+        name: 'worker',
+        slug: 'worker',
+        repoFullName: 'mohammed/milo',
+      })
+      .returning()
+      .get();
+    db.insert(repoHooks)
+      .values({ repoFullName: 'mohammed/milo', hookId: 5, webhookSecretEnc: 'v1.a.b.c' })
+      .run();
+
+    const { docker } = fakeDocker();
+    const { admin } = fakeAdmin();
+    const { github, calls } = fakeRepoOps();
+    const { call } = await signedInApp({ db, docker, admin, github });
+
+    await call(`/api/services/${other.id}`, { method: 'DELETE' });
+
+    expect(calls).toEqual([]);
+    expect(db.select().from(repoHooks).all()).toHaveLength(1);
   });
 });

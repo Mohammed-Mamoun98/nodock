@@ -73,6 +73,8 @@ export interface GitHubOps {
     name: string,
     value: string,
   ): Promise<void>;
+  deleteWebhook?(accessToken: string, repoFullName: string, hookId: number): Promise<void>;
+  deleteActionsSecret?(accessToken: string, repoFullName: string, name: string): Promise<void>;
   createWebhook?(
     accessToken: string,
     repoFullName: string,
@@ -374,6 +376,49 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
 
       const body = (await response.json()) as { id: number };
       return { id: body.id };
+    },
+
+    async deleteWebhook(accessToken, repoFullName, hookId) {
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/hooks/${hookId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'user-agent': 'nodock',
+          },
+        },
+      );
+
+      // 404 means it is already gone, which is the desired end state.
+      if (!response.ok && response.status !== 404) {
+        throw new GitHubHttpError(
+          response.status,
+          `Could not delete the webhook (${response.status})`,
+        );
+      }
+    },
+
+    async deleteActionsSecret(accessToken, repoFullName, name) {
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/actions/secrets/${encodeURIComponent(name)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'user-agent': 'nodock',
+          },
+        },
+      );
+
+      if (!response.ok && response.status !== 404) {
+        throw new GitHubHttpError(
+          response.status,
+          `Could not delete the Actions secret (${response.status})`,
+        );
+      }
     },
 
     async dispatchBuild(accessToken, repoFullName, eventType, payload) {
