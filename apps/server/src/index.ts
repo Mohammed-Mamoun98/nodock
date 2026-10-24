@@ -2,6 +2,8 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { createApp } from './app';
+import { createCaddyAdmin } from './caddy/admin';
+import { reconcileWithRetry } from './caddy/service';
 import { loadConfig } from './config';
 import { openDatabase } from './db/client';
 
@@ -80,3 +82,18 @@ console.log(
 console.log(
   `[nodock] ghcr pull: ${config.ghcr.token ? 'token set' : 'anonymous (public packages only)'}`,
 );
+
+// Routing is re-applied from DB state on every boot: Caddy's config may have been
+// autosaved from an older generation, and nodock may have missed changes while down.
+if (config.caddy.adminUrl) {
+  const admin = createCaddyAdmin(config.caddy.adminUrl);
+  reconcileWithRetry({ config, db, admin }).then((result) => {
+    console.log(
+      result.ok
+        ? `[nodock] caddy config applied (${result.hosts} hosts)`
+        : `[nodock] caddy reconcile failed: ${result.error}`,
+    );
+  });
+} else {
+  console.log('[nodock] caddy reconcile disabled (CADDY_ADMIN_URL unset)');
+}

@@ -20,6 +20,9 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v === '1' || v === 'true'),
   DOCKER_NETWORK: z.string().min(1).default('nodock'),
+  /** Empty disables Caddy reconciliation (host runs without a proxy). */
+  CADDY_ADMIN_URL: z.string().default(''),
+  CADDY_ASK_URL: z.string().default('http://nodock:3000/internal/caddy/ask'),
   /** Extra origins allowed to mutate (the Vite dev server, mainly). Same-origin is always allowed. */
   ALLOWED_ORIGINS: z.string().default(''),
   GHCR_USER: z.string().min(1).optional(),
@@ -37,6 +40,7 @@ export interface Config {
   port: number;
   accessLog: boolean;
   dockerNetwork: string;
+  caddy: { adminUrl: string | null; askUrl: string };
   /** Normalised extra origins permitted to send mutating requests. */
   allowedOrigins: string[];
   ghcr: { user?: string; token?: string };
@@ -77,6 +81,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: e.PORT,
     accessLog: e.NODOCK_ACCESS_LOG,
     dockerNetwork: e.DOCKER_NETWORK,
+    caddy: {
+      adminUrl: e.CADDY_ADMIN_URL ? e.CADDY_ADMIN_URL.replace(/\/$/, '') : null,
+      askUrl: e.CADDY_ASK_URL,
+    },
     allowedOrigins: e.ALLOWED_ORIGINS.split(',')
       .map((value) => value.trim())
       .filter(Boolean)

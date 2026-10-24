@@ -3,6 +3,7 @@ import { createGitHubClient, type GitHubClient } from './auth/github';
 import { registerAuthRoutes } from './auth/routes';
 import type { Config } from './config';
 import type { Db } from './db/client';
+import { registerCaddyRoutes } from './caddy/routes';
 import { apiError } from './http';
 import { registerProjectRoutes } from './routes/projects';
 import { registerServiceRoutes } from './routes/services';
@@ -56,6 +57,10 @@ export function createApp(deps: AppDeps) {
       baseDomain: config.baseDomain,
     });
   });
+
+  // Caddy's on-demand TLS ask hook. Unauthenticated by design: Caddy cannot send
+  // a session, which is why it answers only yes/no for known hosts.
+  registerCaddyRoutes(app, { config, db });
 
   // Auth owns /auth/*, /api/me, /api/auth/*, plus the origin and session guards on /api/*.
   registerAuthRoutes(app, {

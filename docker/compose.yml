@@ -19,6 +19,7 @@ services:
     environment:
       DATA_DIR: /data
       DOCKER_CONFIG: /data/docker
+      CADDY_ADMIN_URL: http://caddy:2019
     volumes:
       - nodock_data:/data
       - /var/run/docker.sock:/var/run/docker.sock
