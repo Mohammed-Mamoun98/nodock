@@ -8,3 +8,4 @@ dist/
 .env.local
 .DS_Store
 apps/server/drizzle/meta/_journal.json.bak
+.superdesign/*
