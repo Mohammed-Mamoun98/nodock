@@ -1,9 +1,14 @@
 import { Hono } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createGitHubClient, type GitHubClient } from './auth/github';
 import { registerAuthRoutes } from './auth/routes';
 import type { Config } from './config';
 import type { Db } from './db/client';
+import { apiError } from './http';
+import { registerProjectRoutes } from './routes/projects';
+import { registerServiceRoutes } from './routes/services';
+import { registerVariableRoutes } from './routes/variables';
+
+export { apiError, type ApiError } from './http';
 
 export interface AppDeps {
   config: Config;
@@ -14,19 +19,6 @@ export interface AppDeps {
   now?: () => number;
   /** Injected in tests; defaults to process start. */
   bootedAt?: number;
-}
-
-export interface ApiError {
-  error: { code: string; message: string; details?: unknown };
-}
-
-export function apiError(
-  code: string,
-  message: string,
-  status: ContentfulStatusCode = 400,
-  details?: unknown,
-) {
-  return { status, body: { error: { code, message, details } } satisfies ApiError };
 }
 
 export function createApp(deps: AppDeps) {
@@ -72,6 +64,11 @@ export function createApp(deps: AppDeps) {
     github: deps.github ?? createGitHubClient(),
     now: deps.now,
   });
+
+  // Everything below sits behind the guard registered above.
+  registerProjectRoutes(app, { config, db });
+  registerServiceRoutes(app, { config, db });
+  registerVariableRoutes(app, { config, db });
 
   // Everything still unrouted behind the guard returns an explicit 501, not a silent SPA fallback.
   app.all('/api/*', (c) => {

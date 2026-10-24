@@ -146,6 +146,8 @@ export const variables = sqliteTable(
       .references(() => serviceEnvs.id, { onDelete: 'cascade' }),
     key: text('key').notNull(),
     valueEnc: text('value_enc').notNull(),
+    /** Display only: every value is encrypted regardless. */
+    isSecret: integer('is_secret', { mode: 'boolean' }).notNull().default(true),
     createdAt: createdAt().notNull(),
   },
   (t) => [

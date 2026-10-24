@@ -1,0 +1,1 @@
+ALTER TABLE `variables` ADD `is_secret` integer DEFAULT true NOT NULL;

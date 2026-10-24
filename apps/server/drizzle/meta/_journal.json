@@ -15,6 +15,13 @@
       "when": 1792870961416,
       "tag": "0001_adorable_ironclad",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792872748004,
+      "tag": "0002_strong_aaron_stack",
+      "breakpoints": true
     }
   ]
 }
