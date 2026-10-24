@@ -33,15 +33,15 @@ Repo is empty (only README) — this plan builds the project from scratch.
 
 | Piece | Choice | Why |
 |---|---|---|
-| Runtime | **Bun** (`oven/bun:1-alpine`) | Built-in SQLite, fast startup, low idle memory |
+| Runtime | **Bun** (`oven/bun:1.<minor>-alpine`, pinned) run with `--smol` | Built-in SQLite, fast startup, low idle memory; pinning avoids silent RSS regressions, `--smol` trades a little throughput for ~20–30% lower RSS |
 | API | **Hono** (+ `hono/bun`, `hono/streaming`) | Tiny, SSE helper, portable to Node if needed |
-| UI | **React + Vite + Tailwind + shadcn/ui** | Fast, familiar, good component quality |
-| DB | **SQLite (`bun:sqlite`)** + Drizzle ORM | No extra container; WAL + `synchronous=NORMAL` |
-| Container ops | **`docker` CLI via `Bun.spawn`** (socket mounted) | Only pull/run/stop/inspect needed now |
+| UI | **React behind a `preact/compat` alias + Vite + Tailwind + shadcn/ui** | Fast, familiar, good component quality; Preact alias saves ~30 KB gz, Radix is allowed for `Dialog` + `Tabs` only |
+| DB | **SQLite (`bun:sqlite`)** + Drizzle ORM | No extra container; WAL + `synchronous=NORMAL`, with `cache_size=-2000`, `journal_size_limit`, `mmap_size=0` to cap memory |
+| Container ops | **`docker` CLI via `Bun.spawn`** (socket mounted) | Only pull/run/stop/rm needed now; one long-lived `docker events` subscriber owns container state |
 | Builds | **GitHub Actions → GHCR** | Off the VPS; free for public repos, 2,000 min/mo private |
 | Proxy/TLS | **Caddy** container | Automatic HTTPS + on-demand TLS; full config via admin API |
 | Queue | In-process, SQLite-backed rows | No Redis; only pulls/starts are queued (light) |
-| Secrets | AES-256-GCM, key at `/data/secret.key` | Simple, no external KMS |
+| Secrets | AES-256-GCM, key derived from `NODOCK_SECRET` | Single source of truth (no key file), no external KMS |
 | Sessions | Random 32-byte token, SHA-256 hash in DB, HttpOnly+Secure+SameSite=Lax cookie | No JWT machinery |
 
 **Portability guardrail:** keep Docker access behind a small `DockerAdapter` interface so tests use a fake and the CLI can later be swapped for the Engine API. Keep GitHub access behind a `GitHubClient` interface for the same reason.
@@ -69,7 +69,8 @@ Internet :80/:443
 ```
 
 - Caddy is the **only** ingress. App containers publish no host ports; Caddy reaches them by container name on the shared `nodock` network.
-- nodock mounts `/var/run/docker.sock` (root-equivalent — document it) and `/data` (SQLite, deploy logs, key, Docker auth).
+- nodock mounts `/var/run/docker.sock` (root-equivalent — document it) and `/data` (SQLite, deploy logs, Docker auth).
+- One long-lived `docker events` subscriber (label-filtered, reconnecting with backoff) maintains an in-memory container-state map. **No `docker inspect` runs on a request path** — status reads are memory lookups, and the same map feeds the state SSE channel.
 - If nodock is down, deployed apps and Caddy keep serving; on boot nodock reconciles and re-applies routes. CI builds still run, but their callbacks may be lost — see recovery.
 
 ### CI flow in detail
@@ -196,7 +197,7 @@ queued ──► pulling ──► starting ──► healthchecking ──► s
 
 1. **queued** — deployment created; dispatch sent (manual/push) or, for rollback, skipped straight to `pulling`.
 2. **pulling** — `docker pull <image_ref>`; streamed into `/data/logs/<deploymentId>.log`.
-3. **starting** — `docker run -d --name nodock-<slug>-<env>-<id> --network nodock --restart unless-stopped --label nodock.* --log-opt max-size=10m --log-opt max-file=3`, env vars injected from DB. No `-p`.
+3. **starting** — `docker run -d --name nodock-<slug>-<env>-<id> --network nodock --restart unless-stopped --memory 512m --pids-limit 256 --label nodock.* --log-opt max-size=10m --log-opt max-file=3 --env-file /data/env/<deploymentId>`, env vars written to a `0600` env-file (deleted after start) so secrets never hit argv. No `-p`. Default memory limit is 512 MB with a per-service override, so one runaway app cannot OOM the whole box.
 4. **healthchecking** — if `health_path` set, poll `http://<container>:<port><path>` from the platform for up to 60s; otherwise require running + 3s grace.
 5. **switching** — add/replace the Caddy route for the host to the new container, then `docker stop` + `docker rm` the previous container. The old image is kept for rollback.
 6. **live** — URL shown in the UI.
@@ -211,7 +212,8 @@ Concurrency: one pull/start at a time per service_env, at most 2 globally; build
 
 ### Caddy routing
 
-- Bootstrap config (mounted file) only enables the admin API on `0.0.0.0:2019` and on-demand TLS with `ask: http://nodock:3000/internal/caddy/ask`.
+- Bootstrap config (mounted file) enables the admin API on `0.0.0.0:2019` and on-demand TLS with `ask: http://nodock:3000/internal/caddy/ask`. The admin API is **unauthenticated**: it must only be reachable from nodock, never from app containers — see the network-split item in Risks.
+- Global options include `encode zstd gzip`; hashed assets are served `Cache-Control: immutable`; **access logs are off by default** behind `NODOCK_ACCESS_LOG=1` because they cost CPU and disk on a small box.
 - On every route-relevant change, the platform renders the **entire** config from the DB and `POST /load`s it (all-or-nothing; previous config restored on error). One writer, so no merge races. Debounce render calls and batch changes because `/load` aborts in-flight ACME work.
 - Route order: dashboard host (`NODOCK_URL`) → each service host → fallback 404. Each app route is `reverse_proxy <container_name>:<port>`.
 - `/internal/caddy/ask?domain=` returns 200 only for the dashboard host or a host present in `service_envs` (generated or custom), else 403. ACME still requires DNS to point at the server, so this cannot mint certs for arbitrary domains.
@@ -241,6 +243,9 @@ Concurrency: one pull/start at a time per service_env, at most 2 globally; build
 - Variables: `GET/PUT /api/services/:id/envs/:envId/variables` (bulk replace)
 - Deploy: `POST /api/services/:id/envs/:envId/deploy`, `POST .../stop|start|restart`, `GET .../deployments`, `GET /api/deployments/:id`, `POST /api/deployments/:id/rollback`, `POST /api/deployments/:id/cancel`
 - Logs: `GET /api/deployments/:id/logs`, `GET /api/deployments/:id/logs/stream` (SSE), `GET /api/services/:id/envs/:envId/logs/stream` (SSE)
+- Events: `GET /api/events` (SSE; deployment/CI/container state deltas, fed by the in-memory map — replaces polling)
+- Overviews: `GET /api/projects/:id/overview`, `GET /api/services/:id/overview` (single-screen aggregates, one joined query each — never a loop)
+- Ops: `GET /healthz`, `GET /metrics-lite` (RSS, event-loop delay, SSE client count)
 - Domain: `PUT /api/services/:id/envs/:envId/domain`
 - Settings: `GET/PATCH /api/settings`
 - Integrations: `POST /webhooks/github`, `GET /internal/caddy/ask`
@@ -256,7 +261,10 @@ Concurrency: one pull/start at a time per service_env, at most 2 globally; build
   - **Variables** — per-env key/value, secret masking, bulk save.
   - **Settings** — repo/branch, Dockerfile path, context, port, health path, generated + custom domain, CI status (`Not enabled` / `Enabled` / `Workflow out of date` / `Workflow modified`) with an **Enable CI** / **Update workflow** action, danger zone.
 - `/settings` — base domain (from env in v1), GitHub connection status, GHCR pull-token status.
-- State: TanStack Query polling 2–3s for project/service/deploy state; SSE only for logs. shadcn `Card`, `Tabs`, `Dialog`, `Badge`, `Input`, `Table`, `Sonner`.
+- State: **one SSE channel per tab** (`GET /api/events`) delivers state invalidations into the TanStack Query cache; REST serves reads. Logs stream over SSE with one `docker logs --follow` per client, closed on unmount or tab switch. Aggregates come from the `/overview` endpoints, never client-side fan-out.
+- Components: `Card`/`Badge`/`Input`/`Table`/`Skeleton` are plain Tailwind markup (no JS); **Radix is used only for `Dialog` and `Tabs`** (focus trap, `aria-modal`, arrow-key nav). Native `<select>` for env/branch pickers, inline icon buttons instead of dropdown menus, no tooltip library, custom ~40-line toast. `Table` is styled `<table>` — not TanStack Table.
+- Frontend budget: ≤120 KB gz initial JS, reported per area (framework / Radix / app / helpers). Any new UI dependency must justify itself against that budget and remove an equivalent; `@floating-ui/*` is not permitted.
+- Feel: optimistic mutations for deploy/stop/restart, skeleton loaders on first paint, hover-prefetch of the service detail route, and a `Variables changed — redeploy to apply` marker instead of pretending env edits are live.
 - Onboarding: first project → New service wizard (repo picker → branch → Dockerfile path → port → enable CI → create & deploy). Sensible defaults so the first deploy works without touching settings.
 - While a deploy is `queued` and CI hasn't reported, the card shows "Building on GitHub" with a link to the repo's Actions page; it switches to the exact run link when `started` arrives.
 
@@ -292,6 +300,10 @@ volumes: { caddy_data: {}, caddy_config: {}, nodock_data: {} }
 
 `.env` (written by `scripts/install.sh`, which generates `NODOCK_SECRET`):
 `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `ADMIN_GITHUB_LOGIN`, `NODOCK_URL` (e.g. `https://panel.example.com`), `BASE_DOMAIN` (e.g. `apps.example.com`), `NODOCK_SECRET`, optional `GHCR_USER`/`GHCR_TOKEN`.
+
+`NODOCK_SECRET` is the **single source of truth** for the encryption key (no key file). Losing it makes every `*_enc` column unrecoverable: back it up alongside the database, and fail loudly at boot if the key cannot decrypt existing rows.
+
+**Persistence & backups.** `/data` holds the SQLite DB, deploy logs, and nothing else sensitive. A nightly `sqlite3 /data/nodock.db ".backup /data/backups/nodock-<date>.db"` keeps 7 days, plus a snapshot before every migration. Restore = stop nodock, replace the DB, start. Document an actual restore drill — a PaaS whose entire state is one volume with no backup story is a footgun.
 
 Install steps in the README: create the GitHub OAuth App with callback `<NODOCK_URL>/auth/github/callback`, set `panel` + `*` A records to the server, add 2 GB swap, run `install.sh`, open `NODOCK_URL`.
 
@@ -365,12 +377,22 @@ A `researcher` run, then an `evidence-auditor` pass. Output: `docs/research/gith
   3. Push a commit → Actions builds → nodock deploys automatically. Edit a variable, redeploy, confirm it changed. Open logs. Roll back.
   4. Stop Docker Actions mid-build → deployment fails with a link. Stop nodock during a build → the callback is lost; watchdog marks it failed; redeploy works.
   5. Restart nodock after a deploy → app stays reachable and routes are re-applied.
-- **Resource check**: `docker stats` idle for nodock + caddy; confirm the control plane stays under ~150 MB.
+- **Resource check**: `bun --smol` idle RSS for nodock and Caddy against the budgets (≤80 MB / ≤120 MB), 1-hour idle CPU, p95 `/overview`, and initial JS gz reported per area — recorded in `docs/measurements.md`.
+
+## Considered and rejected
+
+- **Go (or Rust) + HTMX/SSR control plane.** ~50–70 MB total with Caddy and ~30 KB pages, versus ~110–150 MB and a ~120 KB JS budget here. Rejected for v1: on a 2 GB box that is ~3% of RAM, and the Railway-like UI (live logs, optimistic cards, diff review) is significantly more work without React. The `DockerAdapter`/`GitHubClient`/`CaddyAdmin` seams keep it a port rather than a rewrite; revisit only if measurement misses the 80 MB idle budget or a sub-1 GB floor becomes a product requirement.
+- **Merging Caddy into the nodock container.** Saves ~8 MB and one container, but breaks the property the whole architecture leans on — apps and routes survive a nodock restart.
+- **nginx instead of Caddy.** ~5–10 MB lighter, but no ACME automation and no config admin API, which is exactly what the routing design is built on.
+- **Polling instead of state SSE.** Simpler to write, but wakes the CPU forever, scales with open tabs, and is slower to show changes than a push.
 
 ## Risks / gotchas
 
 - **GHCR pull token is setup friction.** Private packages need a classic PAT with `read:packages`; public packages pull anonymously. Detect 401 on pull and link to the setting.
 - **Docker socket = root.** Inherent to the product; document it, keep the dashboard OAuth-gated + allowlisted, and never expose port 3000 publicly (Caddy only).
+- **Caddy's admin API is an unauthenticated root-equivalent path.** Any container that can reach `:2019` can rewrite routing (including the dashboard host). Split the networks (`control`: caddy + nodock; `edge`: caddy + apps) or bind `admin` to a unix socket, before app containers ever exist.
+- **Losing `/data` loses everything.** Encrypted variables are unrecoverable without `NODOCK_SECRET`. Backups are a launch requirement, not hardening.
+- **Multiple `EXPOSE` ports are ambiguous.** Require `container_port` at service creation (prefilled from the first `EXPOSE` after pull) instead of failing at run time.
 - **Default-branch dependency.** `repository_dispatch` only runs a workflow that exists on the default branch; branch protection can block the bot commit. Fall back to showing the YAML + instructions. The checkout uses the dispatched SHA, so non-default branches still build correctly.
 - **Callbacks are best-effort.** `continue-on-error` keeps the build green if nodock is unreachable; the watchdog and "redeploy last image" cover the gap.
 - **CI minutes.** Every enabled-service push dispatches a build (private repos consume the monthly quota). No branch filter exists in v1; document it.
@@ -384,10 +406,13 @@ A `researcher` run, then an `evidence-auditor` pass. Output: `docs/research/gith
 - **Bun compatibility** — no dockerode; Docker stays behind a spawn-based adapter. Hono/React/SQLite remain portable to Node (`better-sqlite3`) if needed.
 - **Build logs are not in nodock** — this is the one deliberate UX compromise; deployment rows link directly to the Actions run.
 
-## Memory expectation (estimates, not measured)
+## Resource budgets (measure, don't estimate)
 
-- nodock: ~50–110 MB RSS (Bun + Hono + SQLite, no local builds); Caddy ~30–50 MB → **~80–160 MB total idle**.
-- Coolify: Laravel app + Postgres + Redis + realtime ≈ **~0.7–1.5 GB** typical.
-- Dokploy: Node app + Postgres + Redis + Traefik ≈ **~0.5–1.0 GB** typical.
+Targets, enforced at M1 and before packaging:
 
-Builds run on GitHub-hosted runners, so the VPS sees no build spike at all.
+- nodock idle RSS **≤80 MB**, nodock + Caddy **≤120 MB** (Bun with `--smol`, no local builds; Caddy ~30–50 MB).
+- Idle CPU **≤0.5% of one core** over a 1-hour window with 10 service rows present.
+- p95 `GET /api/projects/:id/overview` **≤40 ms**; initial JS **≤120 KB gz**.
+- Host headroom is governed by per-app container limits, not by the control plane; the runtime choice is not the capacity lever.
+
+For reference: Coolify ≈ **~0.7–1.5 GB** (Laravel + Postgres + Redis + realtime), Dokploy ≈ **~0.5–1.0 GB** (Node + Postgres + Redis + Traefik). Builds run on GitHub-hosted runners, so the VPS sees no build spike at all. Measurements land in `docs/measurements.md`; a missed budget is a decision point (M0 revisit gate), not a footnote.
