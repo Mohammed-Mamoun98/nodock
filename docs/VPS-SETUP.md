@@ -7,9 +7,20 @@ Assumptions: Ubuntu 22.04/24.04 or Debian 12, 2 GB RAM, root or sudo, domain `te
 
 ## 0. Prerequisites
 
+**Do not install Docker from snap.** The snap build is confined and can only read `$HOME`,
+`/mnt` and `/media`; a project under `/opt` is mapped to `/var/lib/snapd/void/...` and compose
+fails with `compose file ".../docker/compose.yml" is invalid: no such file or directory`. If
+`which docker` prints `/snap/bin/docker`, remove it first:
+
 ```bash
-# Docker Engine + compose plugin (skip if already installed)
+sudo snap remove docker
+```
+
+Then install the real engine:
+
+```bash
 curl -fsSL https://get.docker.com | sh
+which docker            # must be /usr/bin/docker
 docker compose version
 
 # Swap, so a memory spike does not OOM-kill the panel
