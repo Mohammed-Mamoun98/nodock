@@ -222,7 +222,9 @@ Concurrency: one pull/start at a time per service_env, at most 2 globally; build
 
 ### Auth & GitHub integration
 
-- GitHub **OAuth App** (`repo` scope), authorize → callback → exchange code → `GET /user`; reject unless `login` is in `ADMIN_GITHUB_LOGIN` (comma-separated). Store the user token encrypted.
+- GitHub **OAuth App** (`repo workflow` scopes — see `docs/research/github-caddy-facts.md`), authorize → callback → exchange code → `GET /user`; reject unless `login` is in `ADMIN_GITHUB_LOGIN` (comma-separated). Store the user token encrypted.
+- Users and sessions live in the same SQLite DB at `/data/nodock.db` (`users`, `sessions`) — ~1 user row, one session row per device. No external identity service, no auth library.
+- Sessions are provider-agnostic: a provider only has to produce `{ provider, subject, login, avatarUrl, token }`. GitHub is the only provider in v1; adding Google means one more route pair, not a new session model. Google alone cannot replace GitHub — it grants identity, not repo access, and deploys need a GitHub token.
 - The same token drives repo listing, hook creation, `repository_dispatch`, workflow commits, and Actions-secret creation (`repo` covers all of these). On 401, surface a "Reconnect GitHub" state.
 - `state` in a short-lived signed cookie; verify on callback. Re-validate identity on every token receipt per GitHub guidance.
 - Sessions expire in 30 days; logout deletes the row. Mutations require a same-origin `Origin` check.
@@ -385,6 +387,8 @@ A `researcher` run, then an `evidence-auditor` pass. Output: `docs/research/gith
 - **Merging Caddy into the nodock container.** Saves ~8 MB and one container, but breaks the property the whole architecture leans on — apps and routes survive a nodock restart.
 - **nginx instead of Caddy.** ~5–10 MB lighter, but no ACME automation and no config admin API, which is exactly what the routing design is built on.
 - **Polling instead of state SSE.** Simpler to write, but wakes the CPU forever, scales with open tabs, and is slower to show changes than a push.
+- **Postgres/Neon for the control-plane database.** Contradicts the product: a network dependency on every request, the panel breaks when the DB is unreachable, and it adds a fourth moving part to a 2 GB box. SQLite + nightly `.backup` covers durability. Revisit only for multi-server or multi-user.
+- **better-auth (or similar) instead of hand-rolled sessions.** Its value is multi-provider social login, password flows, MFA, and org plugins — none of which a single-admin allowlisted OAuth App needs. It also brings its own `user`/`session`/`account`/`verification` schema that would fight the Drizzle schema, plus dozens of transitive deps in a process we just measured at 27 MB. Our session layer is ~150 lines: random 32-byte token, SHA-256 hash, HttpOnly cookie, 30-day expiry.
 
 ## Risks / gotchas
 
