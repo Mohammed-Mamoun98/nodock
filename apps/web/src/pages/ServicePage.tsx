@@ -84,9 +84,16 @@ export function ServicePage({ serviceId }: { serviceId: string }) {
   );
   const meta = stateMeta[state];
   const host = link?.customDomain ?? link?.generatedHost ?? '';
+  const ciBlocked = ci.data ? ci.data.status !== 'enabled' : false;
 
   async function runDeploy() {
     if (!link) return;
+    if (ciBlocked) {
+      setActionError(
+        'CI is not enabled for this repository — deploy would have nothing to pull. Enable CI below first.',
+      );
+      return;
+    }
     setBusy(true);
     setActionError(null);
     try {
@@ -178,6 +185,59 @@ export function ServicePage({ serviceId }: { serviceId: string }) {
           <p className="rounded-md border border-red/30 bg-red/10 px-3 py-2 font-mono text-mono-xs text-red">
             {actionError}
           </p>
+        ) : null}
+
+        {ciBlocked ? (
+          <div className="rounded-md border border-amber/30 bg-amber/5 px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-mono text-mono-xs text-amber">
+                  CI {ci.data?.status.replace('_', ' ')} · {record.repoFullName}
+                </span>
+                <span className="text-ui-sm text-text-dim">
+                  Deploy needs a workflow to build the image. Enabling commits{' '}
+                  <span className="font-mono text-[11px]">.github/workflows/nodock.yml</span> and an
+                  Actions secret to your repo.
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {ciConflict ? null : (
+                  <Button
+                    variant="primary"
+                    onClick={() => void enable()}
+                    disabled={ciBusy || !owner}
+                  >
+                    {ciBusy
+                      ? 'Enabling…'
+                      : ci.data?.status === 'not_enabled'
+                        ? 'Enable CI'
+                        : 'Update workflow'}
+                  </Button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTab('Settings')}
+                  className="text-ui-sm text-text-dim hover:text-text"
+                >
+                  details
+                </button>
+              </div>
+            </div>
+
+            {ciConflict ? (
+              <div className="mt-2 rounded border border-amber/30 bg-surface p-2">
+                <p className="mb-1.5 font-mono text-mono-xs text-amber">
+                  A different workflow already exists at that path:
+                </p>
+                <pre className="mb-2 max-h-[80px] overflow-auto rounded border border-line bg-canvas p-2 font-mono text-[10px] text-text-dim">
+                  {ciConflict.current.split('\n').slice(0, 6).join('\n')}
+                </pre>
+                <Button variant="primary" onClick={() => void enable(true)} disabled={ciBusy}>
+                  Overwrite it
+                </Button>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </div>
 
