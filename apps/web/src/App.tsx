@@ -16,6 +16,11 @@ type Session =
   | { status: 'anonymous' }
   | { status: 'authenticated'; me: Me };
 
+async function handleSignOut(): Promise<void> {
+  await signOut();
+  window.location.reload();
+}
+
 export default function App() {
   const route = useRoute();
   const [session, setSession] = useState<Session>({ status: 'loading' });
@@ -41,11 +46,6 @@ export default function App() {
       cancelled = true;
     };
   }, []);
-
-  async function handleSignOut() {
-    await signOut();
-    window.location.reload();
-  }
 
   if (session.status === 'loading') {
     return (
