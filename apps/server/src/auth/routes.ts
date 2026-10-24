@@ -68,14 +68,15 @@ export function registerAuthRoutes(app: Hono, deps: AuthDeps): void {
       return c.json(body, status);
     }
 
-    let sameOrigin = false;
+    let originValue = '';
     try {
-      sameOrigin = new URL(origin).origin === new URL(config.url).origin;
+      originValue = new URL(origin).origin;
     } catch {
-      sameOrigin = false;
+      originValue = '';
     }
 
-    if (!sameOrigin) {
+    const allowed = new Set([new URL(config.url).origin, ...config.allowedOrigins]);
+    if (!allowed.has(originValue)) {
       const { status, body } = apiError('bad_origin', `Origin ${origin} is not allowed`, 403);
       return c.json(body, status);
     }

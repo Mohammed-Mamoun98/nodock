@@ -247,6 +247,41 @@ describe('origin guard', () => {
     });
     expect(response.status).toBe(200);
   });
+
+  test('allows an origin listed in ALLOWED_ORIGINS (the Vite dev server)', async () => {
+    const devConfig = loadConfig({
+      NODOCK_SECRET: 'x'.repeat(32),
+      NODOCK_URL: 'https://panel.example.com',
+      BASE_DOMAIN: 'apps.example.com',
+      ADMIN_GITHUB_LOGIN: 'mohammed',
+      GITHUB_CLIENT_ID: 'client-id',
+      GITHUB_CLIENT_SECRET: 'client-secret',
+      ALLOWED_ORIGINS: 'http://localhost:5173, http://127.0.0.1:5173',
+    });
+
+    const { db } = testDb();
+    const app = createApp({ config: devConfig, db, github: fakeGitHub() });
+
+    const start = await app.request('/auth/github');
+    const state = cookieFrom(start, 'nodock_oauth_state');
+    const callback = await app.request(`/auth/github/callback?code=abc&state=${state}`, {
+      headers: { cookie: `nodock_oauth_state=${state}` },
+    });
+    const session = cookieFrom(callback, SESSION_COOKIE);
+
+    const allowed = await app.request('/api/auth/logout', {
+      method: 'POST',
+      headers: { cookie: `${SESSION_COOKIE}=${session}`, origin: 'http://localhost:5173' },
+    });
+    expect(allowed.status).toBe(204);
+
+    const blocked = await app.request('/api/auth/logout', {
+      method: 'POST',
+      headers: { cookie: `${SESSION_COOKIE}=${session}`, origin: 'http://localhost:9999' },
+    });
+    expect(blocked.status).toBe(403);
+    expect(devConfig.allowedOrigins).toEqual(['http://localhost:5173', 'http://127.0.0.1:5173']);
+  });
 });
 
 describe('schema', () => {

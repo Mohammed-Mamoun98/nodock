@@ -19,6 +19,8 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v === '1' || v === 'true'),
   DOCKER_NETWORK: z.string().min(1).default('nodock'),
+  /** Extra origins allowed to mutate (the Vite dev server, mainly). Same-origin is always allowed. */
+  ALLOWED_ORIGINS: z.string().default(''),
   GHCR_USER: z.string().min(1).optional(),
   GHCR_TOKEN: z.string().min(1).optional(),
 });
@@ -34,6 +36,8 @@ export interface Config {
   port: number;
   accessLog: boolean;
   dockerNetwork: string;
+  /** Normalised extra origins permitted to send mutating requests. */
+  allowedOrigins: string[];
   ghcr: { user?: string; token?: string };
   paths: {
     dataDir: string;
@@ -72,6 +76,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: e.PORT,
     accessLog: e.NODOCK_ACCESS_LOG,
     dockerNetwork: e.DOCKER_NETWORK,
+    allowedOrigins: e.ALLOWED_ORIGINS.split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => {
+        try {
+          return new URL(value).origin;
+        } catch {
+          throw new Error(`ALLOWED_ORIGINS contains an invalid origin: ${value}`);
+        }
+      }),
     ghcr: { user: e.GHCR_USER, token: e.GHCR_TOKEN },
     paths: {
       dataDir,

@@ -56,17 +56,22 @@ on a lint error. `git commit --no-verify` skips it; run `bun run verify` before 
 GitHub **OAuth App**, single-admin, allowlisted by login. nodock asks for `repo workflow`
 (`workflow` is required to commit `.github/workflows/*`; see `docs/research/github-caddy-facts.md`).
 
-| Piece        | How                                                                                                                                |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Login        | `GET /auth/github` → GitHub → `GET /auth/github/callback`                                                                          |
-| State        | HMAC-signed nonce + timestamp, 10-minute window, no server-side store                                                              |
-| Session      | 32 random bytes, SHA-256 hash stored, HttpOnly + Secure + SameSite=Lax, 30 days                                                    |
-| GitHub token | AES-256-GCM with a key derived from `NODOCK_SECRET` — losing that secret loses the token and every variable                        |
-| Guard        | `/api/*` returns 401 JSON when signed out; SPA shows the login gate                                                                |
-| CSRF         | Mutating `/api/*` requests must carry a same-origin `Origin` header                                                                |
-| Reconnect    | If the user grants less than `repo workflow`, `/api/me` reports `needsReconnect` and the top bar links back through the OAuth flow |
+| Piece        | How                                                                                                                                 |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Login        | `GET /auth/github` → GitHub → `GET /auth/github/callback`                                                                           |
+| State        | HMAC-signed nonce + timestamp, 10-minute window, no server-side store                                                               |
+| Session      | 32 random bytes, SHA-256 hash stored, HttpOnly + Secure + SameSite=Lax, 30 days                                                     |
+| GitHub token | AES-256-GCM with a key derived from `NODOCK_SECRET` — losing that secret loses the token and every variable                         |
+| Guard        | `/api/*` returns 401 JSON when signed out; SPA shows the login gate                                                                 |
+| CSRF         | Mutating `/api/*` requests must carry a same-origin `Origin` header; `ALLOWED_ORIGINS` adds extras (the Vite dev server on `:5173`) |
+| Reconnect    | If the user grants less than `repo workflow`, `/api/me` reports `needsReconnect` and the top bar links back through the OAuth flow  |
 
 Endpoints: `GET /api/me`, `POST /api/auth/logout` (plus the two `/auth/github*` routes).
+
+**Local dev:** `NODOCK_URL` must be the origin the OAuth callback lands on, so use
+`http://localhost:3000` and register `http://localhost:3000/auth/github/callback` in the OAuth
+App. Browse the panel at `:3000` (served build) or `:5173` (Vite) - cookies are per-host, so
+the session works on both ports, but `:5173` must be in `ALLOWED_ORIGINS` for mutations.
 
 ## Security note
 
