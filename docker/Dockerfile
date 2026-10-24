@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN bun install --frozen-lockfile --production
+RUN bun install --frozen-lockfile --production --ignore-scripts
 
 FROM oven/bun:1-alpine AS web-build
 WORKDIR /app
@@ -13,7 +13,7 @@ COPY --from=deps /app/node_modules node_modules
 COPY package.json bun.lock ./
 COPY apps/web/package.json apps/web/
 COPY apps/web apps/web
-RUN bun install --frozen-lockfile && bun run --cwd apps/web build
+RUN bun install --frozen-lockfile --ignore-scripts && bun run --cwd apps/web build
 
 FROM oven/bun:1-alpine AS runtime
 WORKDIR /app
