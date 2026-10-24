@@ -28,7 +28,8 @@ describe('loadConfig', () => {
   test('defaults DATA_DIR to ./.data so a host run needs no container paths', () => {
     const config = loadConfig(base);
     expect(config.paths.dataDir).toBe('./.data');
-    expect(config.paths.dbFile).toBe('./.data/nodock.db');
+    // node:path normalises the leading './' away.
+    expect(config.paths.dbFile).toBe('.data/nodock.db');
   });
 
   test('access logs are opt-in only', () => {
