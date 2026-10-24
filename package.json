@@ -9,7 +9,7 @@
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
     "build:web": "bun run --cwd apps/web build",
-    "smoke:web": "bun run build:web && bun scripts/smoke-web.ts",
+    "smoke:web": "bun run build:web && bun scripts/smoke-web.ts && SMOKE_ANONYMOUS=1 bun scripts/smoke-web.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt --write",

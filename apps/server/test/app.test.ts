@@ -33,13 +33,13 @@ describe('app', () => {
     expect(body.sseClients).toBe(0);
   });
 
-  test('unmounted API routes return a typed 501, not an HTML fallback', async () => {
+  test('unmounted API routes are behind the auth guard', async () => {
     const { db } = testDb();
     const app = createApp({ config, db });
 
     const res = await app.request('/api/projects');
-    expect(res.status).toBe(501);
-    expect(await res.json()).toMatchObject({ error: { code: 'not_implemented' } });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({ error: { code: 'unauthenticated' } });
   });
 
   test('unknown routes return a typed 404', async () => {

@@ -2,38 +2,64 @@ import { useEffect, useState } from 'react';
 import { LeftRail } from './components/LeftRail';
 import { TopBar } from './components/TopBar';
 import { LinkButton } from './components/ui';
+import { fetchControlPlaneRss, fetchMe, signOut, type Me } from './lib/api';
 import { environments, projects } from './lib/fixtures';
 import { useRoute } from './lib/router';
 import { DashboardPage } from './pages/DashboardPage';
+import { LoginPage } from './pages/LoginPage';
 import { NewServicePage } from './pages/NewServicePage';
 import { ServicePage } from './pages/ServicePage';
 import { VariablesPage } from './pages/VariablesPage';
 
-/** Real number from the running control plane — the rail proves the product's own thesis. */
-function useControlPlaneRss(): number | null {
+type Session =
+  | { status: 'loading' }
+  | { status: 'anonymous' }
+  | { status: 'authenticated'; me: Me };
+
+export default function App() {
+  const route = useRoute();
+  const [session, setSession] = useState<Session>({ status: 'loading' });
   const [rss, setRss] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/metrics-lite')
-      .then((response) => (response.ok ? (response.json() as Promise<{ rssMb: number }>) : null))
-      .then((data) => {
-        if (!cancelled && data) setRss(data.rssMb);
+
+    fetchMe()
+      .then((me) => {
+        if (cancelled) return;
+        setSession(me ? { status: 'authenticated', me } : { status: 'anonymous' });
       })
       .catch(() => {
-        /* metrics are a nicety; the panel works without them */
+        if (!cancelled) setSession({ status: 'anonymous' });
       });
+
+    fetchControlPlaneRss().then((value) => {
+      if (!cancelled) setRss(value);
+    });
+
     return () => {
       cancelled = true;
     };
   }, []);
 
-  return rss;
-}
+  async function handleSignOut() {
+    await signOut();
+    window.location.reload();
+  }
 
-export default function App() {
-  const route = useRoute();
-  const rss = useControlPlaneRss();
+  if (session.status === 'loading') {
+    return (
+      <div className="flex h-full items-center justify-center bg-canvas">
+        <span className="font-mono text-mono-xs text-text-dim">loading…</span>
+      </div>
+    );
+  }
+
+  if (session.status === 'anonymous') {
+    return <LoginPage />;
+  }
+
+  const me = session.me;
 
   return (
     <div className="flex h-full flex-col">
@@ -41,7 +67,10 @@ export default function App() {
         project="milo"
         environment="Production"
         ghcr="ok"
-        avatarUrl="https://i.pravatar.cc/64?u=mohammed"
+        avatarUrl={me.avatarUrl}
+        login={me.login}
+        needsReconnect={me.needsReconnect}
+        onSignOut={handleSignOut}
       />
 
       <div className="flex flex-1 overflow-hidden">

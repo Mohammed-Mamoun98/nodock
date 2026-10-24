@@ -32,6 +32,8 @@ export const users = sqliteTable(
     login: text('login').notNull(),
     avatarUrl: text('avatar_url'),
     tokenEnc: text('token_enc'),
+    /** Space-separated scopes GitHub actually granted (users can grant less than asked). */
+    scopes: text('scopes'),
     createdAt: createdAt().notNull(),
   },
   (t) => [uniqueIndex('users_github_id').on(t.githubId)],

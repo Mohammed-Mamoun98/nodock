@@ -5,7 +5,10 @@ interface TopBarProps {
   environment: string;
   ghcr: 'ok' | 'warn' | 'error';
   reconnecting?: boolean;
-  avatarUrl?: string;
+  avatarUrl?: string | null;
+  login?: string;
+  needsReconnect?: boolean;
+  onSignOut?: () => void;
 }
 
 const ghcrTone: Record<TopBarProps['ghcr'], { dot: string; label: string }> = {
@@ -14,7 +17,16 @@ const ghcrTone: Record<TopBarProps['ghcr'], { dot: string; label: string }> = {
   error: { dot: 'bg-red', label: 'GHCR pull failed' },
 };
 
-export function TopBar({ project, environment, ghcr, reconnecting, avatarUrl }: TopBarProps) {
+export function TopBar({
+  project,
+  environment,
+  ghcr,
+  reconnecting,
+  avatarUrl,
+  login,
+  needsReconnect,
+  onSignOut,
+}: TopBarProps) {
   const tone = ghcrTone[ghcr];
 
   return (
@@ -49,6 +61,15 @@ export function TopBar({ project, environment, ghcr, reconnecting, avatarUrl }: 
         </div>
 
         <div className="flex items-center gap-5">
+          {needsReconnect ? (
+            <a
+              href="/auth/github"
+              className="hidden items-center gap-1.5 rounded border border-amber/30 px-2 py-1 font-mono text-mono-xs text-amber sm:flex"
+            >
+              reconnect github
+            </a>
+          ) : null}
+
           <span className="hidden font-mono text-mono-xs text-text-dim sm:inline">⌘K</span>
 
           <span className="flex items-center gap-1.5">
@@ -56,8 +77,23 @@ export function TopBar({ project, environment, ghcr, reconnecting, avatarUrl }: 
             <span className="font-mono text-mono-xs text-text-dim">{tone.label}</span>
           </span>
 
+          {onSignOut ? (
+            <button
+              type="button"
+              onClick={onSignOut}
+              title={login ? `Sign out ${login}` : 'Sign out'}
+              className="hidden text-ui-sm text-text-dim transition-colors hover:text-text sm:inline"
+            >
+              sign out
+            </button>
+          ) : null}
+
           {avatarUrl ? (
-            <img src={avatarUrl} alt="" className="h-7 w-7 rounded-full border border-line" />
+            <img
+              src={avatarUrl}
+              alt={login ? `${login} avatar` : ''}
+              className="h-7 w-7 rounded-full border border-line"
+            />
           ) : (
             <span className="h-7 w-7 rounded-full border border-line bg-surface-2" aria-hidden />
           )}

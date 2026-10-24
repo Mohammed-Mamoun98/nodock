@@ -36,9 +36,25 @@ g.KeyboardEvent = window.KeyboardEvent;
 g.getComputedStyle = window.getComputedStyle.bind(window);
 g.requestAnimationFrame = (cb: (t: number) => void) => setTimeout(() => cb(Date.now()), 0);
 g.cancelAnimationFrame = (id: number) => clearTimeout(id);
-// The only network call the shell makes; answer it locally.
-g.fetch = async () =>
-  new Response(
+// The only calls the shell makes; answer them locally.
+const anonymous = process.env.SMOKE_ANONYMOUS === '1';
+
+g.fetch = async (input: string | URL | Request) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (url.includes('/api/me')) {
+    if (anonymous) return new Response(null, { status: 401 });
+    return new Response(
+      JSON.stringify({
+        login: 'mohammed',
+        avatarUrl: null,
+        scopes: ['repo', 'workflow'],
+        missingScopes: [],
+        needsReconnect: false,
+      }),
+      { headers: { 'content-type': 'application/json' } },
+    );
+  }
+  return new Response(
     JSON.stringify({
       ok: true,
       database: 'ok',
@@ -50,25 +66,34 @@ g.fetch = async () =>
     }),
     { headers: { 'content-type': 'application/json' } },
   );
+};
 
 window.document.body.innerHTML = '<div id="root"></div>';
 
 await import(pathToFileURL(join(assets, entry)).href);
-await new Promise((resolve) => setTimeout(resolve, 100));
+// The shell resolves /api/me before it renders anything, so wait for that round trip.
+await new Promise((resolve) => setTimeout(resolve, 250));
 
 const root = window.document.getElementById('root');
 const html = root?.innerHTML ?? '';
 
-const checks: [string, boolean][] = [
-  ['root is populated', html.length > 500],
-  ['product mark rendered', html.includes('nodock')],
-  ['project switcher rendered', html.includes('milo')],
-  ['service card rendered', html.includes('milo-api')],
-  ['failure copy names the fix', html.includes('add GHCR_TOKEN')],
-  ['ingress node rendered', html.includes('caddy')],
-  ['filters rendered', html.includes('Building')],
-  ['state vocabulary rendered', html.includes('live')],
-];
+const checks: [string, boolean][] = anonymous
+  ? [
+      ['login gate rendered', html.includes('Continue with GitHub')],
+      ['requested scopes disclosed', html.includes('repo · workflow')],
+      ['no dashboard leaked to anonymous users', !html.includes('milo-api')],
+    ]
+  : [
+      ['root is populated', html.length > 500],
+      ['product mark rendered', html.includes('nodock')],
+      ['project switcher rendered', html.includes('milo')],
+      ['service card rendered', html.includes('milo-api')],
+      ['failure copy names the fix', html.includes('add GHCR_TOKEN')],
+      ['ingress node rendered', html.includes('caddy')],
+      ['filters rendered', html.includes('Building')],
+      ['state vocabulary rendered', html.includes('live')],
+      ['sign out affordance rendered', html.includes('sign out')],
+    ];
 
 let failed = 0;
 for (const [label, ok] of checks) {
@@ -76,7 +101,9 @@ for (const [label, ok] of checks) {
   if (!ok) failed += 1;
 }
 
-console.log(`\nroot innerHTML: ${html.length} bytes from ${entry}`);
+console.log(
+  `\nroot innerHTML: ${html.length} bytes from ${entry} (${anonymous ? 'anonymous' : 'signed in'})`,
+);
 if (failed > 0) {
   console.error(`\n${failed} check(s) failed`);
   process.exit(1);

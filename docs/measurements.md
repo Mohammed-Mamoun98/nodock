@@ -57,6 +57,24 @@ Notes:
 - Inter / JetBrains Mono are referenced with system fallbacks (no webfont request), so type
   is close to the canvas but not identical without those fonts installed.
 
+## M2 — auth (2026-10-24)
+
+GitHub OAuth (OAuth App, `repo workflow`), HMAC-signed state, hashed session tokens,
+AES-256-GCM token storage, `/api/me`, `/api/auth/logout`, origin guard, SPA login gate.
+
+| Metric                     | Value                                                                                                    |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| server tests               | **31 pass / 0 fail** (crypto, state, sessions, full OAuth flow, allowlist, reduced scopes, origin guard) |
+| initial JS after auth gate | 50.15 KB raw / **15.57 KB gz**                                                                           |
+| CSS                        | 4.90 KB gz                                                                                               |
+| render smoke               | 9 checks signed in + 3 checks anonymous                                                                  |
+
+Bugs the tests caught, both real:
+
+1. Two `Set-Cookie` values were comma-joined into one header — the browser would have
+   received a single malformed cookie. Fixed with separate header appends.
+2. `deleteExpiredSessions` read `result.changes` from a Drizzle `.run()` that returns `void`.
+
 ## M1 — verification
 
 - `bun test` → 13 pass / 0 fail (config, health, schema, cascade, host uniqueness).

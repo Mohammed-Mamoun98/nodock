@@ -1,11 +1,17 @@
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { createGitHubClient, type GitHubClient } from './auth/github';
+import { registerAuthRoutes } from './auth/routes';
 import type { Config } from './config';
 import type { Db } from './db/client';
 
 export interface AppDeps {
   config: Config;
   db: Db;
+  /** Injected in tests; defaults to the real HTTP client. */
+  github?: GitHubClient;
+  /** Injected in tests so session expiry is deterministic. */
+  now?: () => number;
   /** Injected in tests; defaults to process start. */
   bootedAt?: number;
 }
@@ -59,7 +65,15 @@ export function createApp(deps: AppDeps) {
     });
   });
 
-  // M2+ mounts real routers here; until then an explicit, typed 404 beats a silent SPA fallback.
+  // Auth owns /auth/*, /api/me, /api/auth/*, plus the origin and session guards on /api/*.
+  registerAuthRoutes(app, {
+    config,
+    db,
+    github: deps.github ?? createGitHubClient(),
+    now: deps.now,
+  });
+
+  // Everything still unrouted behind the guard returns an explicit 501, not a silent SPA fallback.
   app.all('/api/*', (c) => {
     const { status, body } = apiError(
       'not_implemented',
