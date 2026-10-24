@@ -112,8 +112,12 @@ export function renderCaddyfile(input: CaddyConfigInput): string {
   // Caddy ask for certificates for arbitrary SNI, and /ask would 403 every time.
   blocks.push([':80 {', '\trespond "nodock: unknown host" 404', '}'].join('\n'));
 
+  // /load replaces the ENTIRE config, so the admin binding has to be restated
+  // every time. Without it Caddy falls back to 127.0.0.1:2019 and the first
+  // reconcile silently locks nodock out of its own proxy.
   const globals = [
     '{',
+    '\tadmin 0.0.0.0:2019',
     '\temail {$ACME_EMAIL}',
     '\ton_demand_tls {',
     `\t\task ${askUrl}`,

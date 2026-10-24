@@ -104,6 +104,8 @@ describe('render', () => {
     expect(rendered).toContain('reverse_proxy nodock-api:8080');
     expect(rendered).toContain('encode zstd gzip');
     expect(rendered).toContain('on_demand_tls');
+    // /load replaces the whole config: dropping this locks nodock out of Caddy.
+    expect(rendered).toContain('admin 0.0.0.0:2019');
     expect(rendered).toContain(':80 {');
     expect(rendered).not.toContain(':443 {');
     expect(hostsIn(rendered)).toEqual([
