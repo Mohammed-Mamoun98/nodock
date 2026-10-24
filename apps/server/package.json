@@ -1,0 +1,21 @@
+{
+  "name": "@nodock/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --smol --watch src/index.ts",
+    "start": "bun --smol src/index.ts",
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4",
+    "drizzle-kit": "^0.31.11",
+    "typescript": "^7.0.2"
+  }
+}

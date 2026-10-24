@@ -1,0 +1,38 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [nodock]
+    restart: unless-stopped
+
+  nodock:
+    image: ghcr.io/OWNER/nodock:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    env_file: ../.env
+    environment:
+      DOCKER_CONFIG: /data/docker
+    volumes:
+      - nodock_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [nodock]
+    depends_on: [caddy]
+    restart: unless-stopped
+    # The control plane gets a ceiling so a memory bug degrades the panel, not the host.
+    mem_limit: 300m
+
+networks:
+  nodock:
+    name: nodock
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  nodock_data: {}

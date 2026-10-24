@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.data/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+.DS_Store
+apps/server/drizzle/meta/_journal.json.bak

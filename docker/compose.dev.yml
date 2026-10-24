@@ -1,0 +1,37 @@
+# Dev: API runs on the host with `bun --watch` (or in this container), Vite proxies
+# /api, /auth, /webhooks to it, and app containers join the same `nodock` network so
+# name-based routing behaves exactly as in production.
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    ports: ['8080:80']
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - caddy_dev_data:/data
+    networks: [nodock]
+    restart: unless-stopped
+
+  nodock:
+    image: oven/bun:1-alpine
+    working_dir: /app
+    command: sh -c "bun install --frozen-lockfile && bun --smol --watch apps/server/src/index.ts"
+    env_file: ../.env
+    environment:
+      DATA_DIR: /data
+      DOCKER_CONFIG: /data/docker
+      PORT: '3000'
+    ports: ['3000:3000']
+    volumes:
+      - ..:/app
+      - nodock_dev_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [nodock]
+    restart: unless-stopped
+
+networks:
+  nodock:
+    name: nodock
+
+volumes:
+  caddy_dev_data: {}
+  nodock_dev_data: {}

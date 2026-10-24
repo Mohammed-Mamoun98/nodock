@@ -1,0 +1,17 @@
+# Bootstrap config only. Every site block is rendered from the DB and pushed via
+# the admin API, so this file must stay free of routes.
+#
+# Each rendered route carries its own `encode zstd gzip` and disabled access log;
+# Caddy access logs are off by default because they cost CPU and disk on a small box.
+{
+	admin 0.0.0.0:2019
+	email {$ACME_EMAIL}
+
+	on_demand_tls {
+		ask http://nodock:3000/internal/caddy/ask
+	}
+
+	servers {
+		protocols h1 h2 h3
+	}
+}

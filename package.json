@@ -1,0 +1,15 @@
+{
+  "name": "nodock",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:server": "bun run --cwd apps/server dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "build:web": "bun run --cwd apps/web build",
+    "test": "bun test",
+    "typecheck": "tsc -b --pretty"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

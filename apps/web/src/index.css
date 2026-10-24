@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+
+/* System font stack: no webfont request, no layout shift. */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+}
