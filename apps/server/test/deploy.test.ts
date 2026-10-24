@@ -43,6 +43,9 @@ function fakeDocker(options: { pullOk?: boolean; inspectRunning?: boolean } = {}
   const calls: DockerCalls = { pulled: [], run: [], stopped: [], removed: [], logins: [] };
 
   const docker: DockerAdapter = {
+    async logs() {
+      return 'Error: listen EADDRINUSE';
+    },
     async login(registry, username) {
       calls.logins.push(`${registry}:${username}`);
     },
@@ -321,6 +324,33 @@ describe('deploy pipeline', () => {
     expect(
       db.select().from(deployments).where(eq(deployments.id, pending.id)).get()?.error,
     ).toContain('manifest unknown');
+  });
+
+  test('the running deployment is never superseded by itself', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    const { docker } = fakeDocker();
+    const { admin } = fakeAdmin();
+
+    await runDeployment({ config, db, docker, admin, health: async () => true }, pending.id);
+
+    const row = db.select().from(deployments).where(eq(deployments.id, pending.id)).get();
+    expect(row?.status).toBe('live');
+    expect(row?.error).toBeNull();
+  });
+
+  test('a failed health check includes the container output', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    const { docker } = fakeDocker();
+    const { admin } = fakeAdmin();
+
+    await runDeployment({ config, db, docker, admin, health: async () => false }, pending.id);
+
+    const row = db.select().from(deployments).where(eq(deployments.id, pending.id)).get();
+    expect(row?.error).toContain('no HTTP response');
+    expect(row?.error).toContain('EADDRINUSE');
+    expect(row?.error).toContain('0.0.0.0');
   });
 
   test('an unhealthy container is removed and the route is left alone', async () => {

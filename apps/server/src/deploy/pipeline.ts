@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, ne } from 'drizzle-orm';
 import { decrypt, deriveKey } from '../auth/crypto';
 import type { CaddyAdmin } from '../caddy/admin';
 import { buildRoutes, renderCurrentConfig } from '../caddy/service';
@@ -49,7 +49,8 @@ export async function runDeployment(
   const deployment = db.select().from(deployments).where(eq(deployments.id, deploymentId)).get();
   if (!deployment) return 'skipped';
 
-  // Supersede anything still waiting for this service env: a newer build wins.
+  // Supersede anything still *waiting* for this service env — but never the row we
+  // are about to run, which is still `queued` at this point.
   db.update(deployments)
     .set({
       status: 'cancelled',
@@ -57,7 +58,11 @@ export async function runDeployment(
       finishedAt: new Date(now()),
     })
     .where(
-      and(eq(deployments.serviceEnvId, deployment.serviceEnvId), eq(deployments.status, 'queued')),
+      and(
+        eq(deployments.serviceEnvId, deployment.serviceEnvId),
+        eq(deployments.status, 'queued'),
+        ne(deployments.id, deploymentId),
+      ),
     )
     .run();
 
@@ -126,12 +131,25 @@ export async function runDeployment(
     rmSync(envFile, { force: true });
 
     setStatus('healthchecking');
-    const healthy = await (deps.health ?? defaultHealth)(
-      `http://${name}:${port}${serviceEnv.healthPath ?? '/'}`,
-    );
+    const healthUrl = `http://${name}:${port}${serviceEnv.healthPath ?? '/'}`;
+    const healthy = await (deps.health ?? defaultHealth)(healthUrl);
     if (!healthy) {
+      // The container's own output is the only useful evidence here: wrong port,
+      // crashed process, or bound to 127.0.0.1 all look identical from outside.
+      const tail = docker.logs ? await docker.logs(name, 15).catch(() => '') : '';
       await docker.remove(name).catch(() => {});
-      fail(db, deploymentId, 'health check failed', now());
+      fail(
+        db,
+        deploymentId,
+        [
+          `health check failed: no HTTP response from ${healthUrl} within 60s`,
+          'Is the container port right, and does the app listen on 0.0.0.0?',
+          tail ? `container said:\n${tail}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        now(),
+      );
       return 'failed';
     }
 
@@ -235,8 +253,10 @@ async function defaultHealth(url: string, timeoutMs = 60_000): Promise<boolean> 
     try {
       // Sequential by design: poll, wait, poll again.
       // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
-      if (response.ok) return true;
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000), redirect: 'manual' });
+      // Any answer below 500 means the server is listening — a 404 on a health
+      // path means the path is wrong, not that the container failed to boot.
+      if (response.status < 500) return true;
     } catch {
       // not up yet
     }

@@ -30,6 +30,8 @@ export interface DockerAdapter {
   pull(image: string, onLine: (line: string) => void): Promise<PullResult>;
   run(spec: ContainerSpec): Promise<{ id: string }>;
   inspect(name: string): Promise<ContainerState | null>;
+  /** Tail of the container's stdout/stderr, used to explain a failed health check. */
+  logs?(name: string, tailLines: number): Promise<string>;
   stop(name: string, graceSeconds: number): Promise<void>;
   remove(name: string): Promise<void>;
 }
@@ -206,6 +208,20 @@ export function createDockerCli(run: typeof Bun.spawn = Bun.spawn): DockerAdapte
         exitCode: exitCode === '<no value>' ? null : Number(exitCode),
         status: status ?? 'unknown',
       };
+    },
+
+    async logs(name, tailLines) {
+      const child = run(['docker', 'logs', '--tail', String(tailLines), name], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        stdin: 'ignore',
+      });
+      const [out, err] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      await child.exited;
+      return `${out}${err}`.trim().slice(-1200);
     },
 
     async stop(name, graceSeconds) {
