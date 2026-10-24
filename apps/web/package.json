@@ -1,5 +1,15 @@
 {
   "name": "@nodock/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "preact": "^11.0.2"
+  },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
     "@tailwindcss/vite": "^4.3.3",
@@ -7,15 +17,5 @@
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.3.5"
-  },
-  "private": true,
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "type": "module",
-  "dependencies": {
-    "preact": "^11.0.2"
   }
 }

@@ -1,17 +1,26 @@
 {
   "name": "nodock",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
     "build:web": "bun run --cwd apps/web build",
     "smoke:web": "bun run build:web && bun scripts/smoke-web.ts",
-    "test": "bun test",
-    "typecheck": "tsc -b --pretty",
-    "verify": "bunx tsc -p apps/server && bunx tsc -p apps/web && bun test --cwd apps/server && bun run smoke:web"
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "fmt": "oxfmt --write",
+    "fmt:check": "oxfmt --check",
+    "test": "bun test --cwd apps/server",
+    "typecheck": "tsc -p apps/server && tsc -p apps/web",
+    "verify": "bun run fmt:check && bun run lint && bun run typecheck && bun run test && bun run smoke:web"
   },
   "devDependencies": {
+    "oxfmt": "^0.74.0",
+    "oxlint": "^1.89.0",
     "typescript": "^5.7.2"
   }
 }

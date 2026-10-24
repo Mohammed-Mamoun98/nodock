@@ -62,6 +62,8 @@ export interface EnvironmentRef {
 }
 
 export interface LogLine {
+  /** Monotonic id from the stream; the render key. */
+  seq: number;
   time: string;
   text: string;
 }

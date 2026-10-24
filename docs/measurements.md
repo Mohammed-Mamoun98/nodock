@@ -1,23 +1,24 @@
 # Measurements
 
-Budgets live in the plan (`i-wanna-build-sth-compiled-clock.md` → *Resource budgets*).
+Budgets live in the plan (`i-wanna-build-sth-compiled-clock.md` → _Resource budgets_).
 Every row records where it was taken, because a laptop number is not a VPS number.
 
 ## M1 — scaffold (2026-10-24, macOS arm64, Bun 1.4.2)
 
 Single process, `bun --smol apps/server/src/index.ts`, empty migrated DB, zero services, no Docker calls.
 
-| Metric | Budget | Measured | Verdict |
-|---|---|---|---|
-| nodock idle RSS | ≤80 MB | **27 MB** (`/metrics-lite`, confirmed by `ps` 28.4 MB) | pass |
-| heap used | — | 4 MB | — |
-| nodock + Caddy | ≤120 MB | not measured (no Caddy in dev) | pending |
-| `GET /healthz` | — | 200, `{ok:true,database:"ok"}` | — |
-| `GET /metrics-lite` | — | 200 | — |
-| initial JS (web) | ≤120 KB gz | **69.2 KB gz** (`vite build`, 16 modules) | pass |
-| CSS (web) | — | 2.4 KB gz | — |
+| Metric              | Budget     | Measured                                               | Verdict |
+| ------------------- | ---------- | ------------------------------------------------------ | ------- |
+| nodock idle RSS     | ≤80 MB     | **27 MB** (`/metrics-lite`, confirmed by `ps` 28.4 MB) | pass    |
+| heap used           | —          | 4 MB                                                   | —       |
+| nodock + Caddy      | ≤120 MB    | not measured (no Caddy in dev)                         | pending |
+| `GET /healthz`      | —          | 200, `{ok:true,database:"ok"}`                         | —       |
+| `GET /metrics-lite` | —          | 200                                                    | —       |
+| initial JS (web)    | ≤120 KB gz | **69.2 KB gz** (`vite build`, 16 modules)              | pass    |
+| CSS (web)           | —          | 2.4 KB gz                                              | —       |
 
 Notes:
+
 - `--smol` was on for this run. Re-measure without it before claiming the delta.
 - The web build is the bare shell (no Radix yet); **69 KB is the floor, not the final number**.
   Re-measure when Dialog + Tabs land, and again at M7 completion.
@@ -28,12 +29,12 @@ Notes:
 Drafts ported: dashboard grid (`be90196f` v4), service detail, new-service wizard, variables editor.
 No icon or routing dependencies: icons are inline SVG, routing is a 40-line hash router.
 
-| Metric | Budget | React | Preact alias | Verdict |
-|---|---|---|---|---|
-| initial JS (raw) | — | 253.0 KB | **47.8 KB** | 5.3× smaller |
-| initial JS (gz) | ≤120 KB | 76.5 KB | **15.0 KB** | pass, 8× headroom |
-| CSS (gz) | — | 4.9 KB | 4.9 KB | pass |
-| control-plane RSS serving the SPA | ≤80 MB | 44 MB | 44 MB | pass |
+| Metric                            | Budget  | React    | Preact alias | Verdict           |
+| --------------------------------- | ------- | -------- | ------------ | ----------------- |
+| initial JS (raw)                  | —       | 253.0 KB | **47.8 KB**  | 5.3× smaller      |
+| initial JS (gz)                   | ≤120 KB | 76.5 KB  | **15.0 KB**  | pass, 8× headroom |
+| CSS (gz)                          | —       | 4.9 KB   | 4.9 KB       | pass              |
+| control-plane RSS serving the SPA | ≤80 MB  | 44 MB    | 44 MB        | pass              |
 
 Alias: `@preact/preset-vite` maps `react`, `react-dom`, and `react/jsx-runtime` to
 `preact/compat`, so source keeps React idioms and the browser gets Preact. `StrictMode` was
@@ -50,6 +51,7 @@ asserts the rendered markup: product mark, project switcher, a service card, the
 Last run: 8/8 checks, 14.7 KB of DOM from `index-DfaauvDr.js`.
 
 Notes:
+
 - No visual QA in this session (no browser). Layout review still needs a human on
   `bun run dev:web` or the canvas.
 - Inter / JetBrains Mono are referenced with system fallbacks (no webfont request), so type

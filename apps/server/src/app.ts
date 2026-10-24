@@ -61,12 +61,20 @@ export function createApp(deps: AppDeps) {
 
   // M2+ mounts real routers here; until then an explicit, typed 404 beats a silent SPA fallback.
   app.all('/api/*', (c) => {
-    const { status, body } = apiError('not_implemented', `${c.req.method} ${c.req.path} is not implemented yet`, 501);
+    const { status, body } = apiError(
+      'not_implemented',
+      `${c.req.method} ${c.req.path} is not implemented yet`,
+      501,
+    );
     return c.json(body, status);
   });
 
   app.notFound((c) => {
-    const { status, body } = apiError('not_found', `No route for ${c.req.method} ${c.req.path}`, 404);
+    const { status, body } = apiError(
+      'not_found',
+      `No route for ${c.req.method} ${c.req.path}`,
+      404,
+    );
     return c.json(body, status);
   });
 

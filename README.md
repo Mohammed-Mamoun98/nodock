@@ -34,6 +34,9 @@ bun run dev:web               # http://localhost:5173  (Vite proxies /api /auth 
 ```bash
 bun test                      # no Docker, no GitHub, no network
 bun run typecheck
+bun run lint                  # oxlint
+bun run fmt                   # oxfmt (prettier-compatible)
+bun run verify                # fmt:check + lint + typecheck + tests + render smoke
 bun run build:web             # then the server serves apps/web/dist
 ```
 

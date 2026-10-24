@@ -143,9 +143,9 @@ export const deployments: Deployment[] = [
 ];
 
 export const deployLog: LogLine[] = [
-  { time: '12:04:01', text: 'pulling ghcr.io/mohammed/milo/milo-api:a3f9c21' },
-  { time: '12:04:19', text: 'healthcheck /healthz 200' },
-  { time: '12:04:20', text: 'starting server...' },
+  { seq: 1, time: '12:04:01', text: 'pulling ghcr.io/mohammed/milo/milo-api:a3f9c21' },
+  { seq: 2, time: '12:04:19', text: 'healthcheck /healthz 200' },
+  { seq: 3, time: '12:04:20', text: 'starting server...' },
 ];
 
 export const variables: Variable[] = [

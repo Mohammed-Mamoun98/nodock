@@ -1,15 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { deployments, environments, projects, serviceEnvs, services, variables } from '../src/db/schema';
+import {
+  deployments,
+  environments,
+  projects,
+  serviceEnvs,
+  services,
+  variables,
+} from '../src/db/schema';
 import { testDb } from './helpers';
 
 function seed() {
   const { db } = testDb();
-  const project = db
-    .insert(projects)
-    .values({ name: 'Shop', slug: 'shop' })
-    .returning()
-    .get();
+  const project = db.insert(projects).values({ name: 'Shop', slug: 'shop' }).returning().get();
   const env = db
     .insert(environments)
     .values({ projectId: project.id, name: 'Production', slug: 'production', isDefault: true })
@@ -62,16 +65,23 @@ describe('schema', () => {
 
   test('rejects a duplicate variable key in one environment', () => {
     const { db, serviceEnv } = seed();
-    db.insert(variables).values({ serviceEnvId: serviceEnv.id, key: 'TOKEN', valueEnc: 'v1' }).run();
+    db.insert(variables)
+      .values({ serviceEnvId: serviceEnv.id, key: 'TOKEN', valueEnc: 'v1' })
+      .run();
 
     expect(() =>
-      db.insert(variables).values({ serviceEnvId: serviceEnv.id, key: 'TOKEN', valueEnc: 'v2' }).run(),
+      db
+        .insert(variables)
+        .values({ serviceEnvId: serviceEnv.id, key: 'TOKEN', valueEnc: 'v2' })
+        .run(),
     ).toThrow();
   });
 
   test('cascades deletes from project down to deployments', () => {
     const { db, project, serviceEnv } = seed();
-    db.insert(deployments).values({ serviceEnvId: serviceEnv.id, trigger: 'manual', imageRef: 'x:1' }).run();
+    db.insert(deployments)
+      .values({ serviceEnvId: serviceEnv.id, trigger: 'manual', imageRef: 'x:1' })
+      .run();
 
     db.delete(projects).where(eq(projects.id, project.id)).run();
 
@@ -84,7 +94,12 @@ describe('schema', () => {
     const { db, env, service } = seed();
     const other = db
       .insert(services)
-      .values({ projectId: service.projectId, name: 'Web', slug: 'web', repoFullName: 'alice/shop' })
+      .values({
+        projectId: service.projectId,
+        name: 'Web',
+        slug: 'web',
+        repoFullName: 'alice/shop',
+      })
       .returning()
       .get();
 

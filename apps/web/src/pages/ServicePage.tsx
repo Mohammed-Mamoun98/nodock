@@ -60,7 +60,11 @@ export function ServicePage({ serviceId }: { serviceId: string }) {
 
         <div className="flex items-center gap-2">
           <span className="font-mono text-mono-xs text-text">{host}</span>
-          <button type="button" aria-label="Copy hostname" className="text-text-dim hover:text-text">
+          <button
+            type="button"
+            aria-label="Copy hostname"
+            className="text-text-dim hover:text-text"
+          >
             <Icon name="copy" />
           </button>
         </div>
@@ -104,11 +108,7 @@ export function ServicePage({ serviceId }: { serviceId: string }) {
           </div>
           <div className="flex-1 overflow-y-auto">
             {deployments.map((deployment, index) => (
-              <DeployRow
-                key={deployment.id}
-                deployment={deployment}
-                isHead={index === 0}
-              />
+              <DeployRow key={deployment.id} deployment={deployment} isHead={index === 0} />
             ))}
           </div>
           <div className="border-t border-line p-4">
@@ -118,7 +118,9 @@ export function ServicePage({ serviceId }: { serviceId: string }) {
       ) : (
         <div className="flex flex-1 items-center justify-center p-8">
           <div className="w-[420px] rounded-lg border border-dashed border-line bg-surface/50 p-6 text-center">
-            <h2 className="mb-2 text-ui-base font-medium">{tab} for {service.name}</h2>
+            <h2 className="mb-2 text-ui-base font-medium">
+              {tab} for {service.name}
+            </h2>
             <p className="text-ui-sm text-text-dim">
               {tab === 'Logs'
                 ? 'Runtime follow streams from the container over SSE — one stream per tab.'

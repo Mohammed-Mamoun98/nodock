@@ -33,11 +33,21 @@ export function StatusDot({ tone, inFlight }: { tone: Tone; inFlight: boolean })
   );
 }
 
-export function StatusWord({ label, tone, inFlight }: { label: string; tone: Tone; inFlight: boolean }) {
+export function StatusWord({
+  label,
+  tone,
+  inFlight,
+}: {
+  label: string;
+  tone: Tone;
+  inFlight: boolean;
+}) {
   return (
     <span className="flex items-center gap-1.5">
       <StatusDot tone={tone} inFlight={inFlight} />
-      <span className={`font-mono text-mono-xs ${tone === 'lime' ? 'text-text-dim' : 'text-text-dim'}`}>
+      <span
+        className={`font-mono text-mono-xs ${tone === 'lime' ? 'text-text-dim' : 'text-text-dim'}`}
+      >
         {label}
       </span>
     </span>
@@ -109,7 +119,9 @@ export function LinkButton({
 }
 
 export function SectionLabel({ children }: { children: ReactNode }) {
-  return <h2 className="px-4 mb-2 font-mono text-mono-xs tracking-wide text-text-dim">{children}</h2>;
+  return (
+    <h2 className="px-4 mb-2 font-mono text-mono-xs tracking-wide text-text-dim">{children}</h2>
+  );
 }
 
 export function toneTextClass(tone: Tone) {

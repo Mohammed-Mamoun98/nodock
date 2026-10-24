@@ -39,7 +39,15 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id);
 // The only network call the shell makes; answer it locally.
 g.fetch = async () =>
   new Response(
-    JSON.stringify({ ok: true, database: 'ok', uptimeMs: 1, version: '1.4.2', rssMb: 27, heapUsedMb: 4, sseClients: 0 }),
+    JSON.stringify({
+      ok: true,
+      database: 'ok',
+      uptimeMs: 1,
+      version: '1.4.2',
+      rssMb: 27,
+      heapUsedMb: 4,
+      sseClients: 0,
+    }),
     { headers: { 'content-type': 'application/json' } },
   );
 

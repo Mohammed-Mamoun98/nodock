@@ -25,7 +25,9 @@ export function DeployRow({ deployment, isHead }: { deployment: Deployment; isHe
           <span className="truncate">{deployment.branch}</span>
           {isHead ? <span className="ml-1 text-[9px] uppercase text-amber">head</span> : null}
         </div>
-        <span className="text-right font-mono text-mono-xs tabular text-text-dim">{deployment.age}</span>
+        <span className="text-right font-mono text-mono-xs tabular text-text-dim">
+          {deployment.age}
+        </span>
       </div>
 
       <div className="mt-1.5 grid grid-cols-[48px_70px_1fr_60px] items-center gap-2">

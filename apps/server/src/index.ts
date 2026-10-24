@@ -7,7 +7,12 @@ import { openDatabase } from './db/client';
 
 const config = loadConfig();
 
-for (const dir of [config.paths.dataDir, config.paths.logsDir, config.paths.envDir, config.paths.backupsDir]) {
+for (const dir of [
+  config.paths.dataDir,
+  config.paths.logsDir,
+  config.paths.envDir,
+  config.paths.backupsDir,
+]) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
 }
 
@@ -26,7 +31,11 @@ function serveSpa(pathname: string): Response | null {
   if (!existsSync(indexHtml)) return null;
   // Hashed assets are immutable; index.html must never be cached.
   const candidate = join(config.paths.webDir, pathname);
-  if (candidate.startsWith(config.paths.webDir) && existsSync(candidate) && !pathname.endsWith('/')) {
+  if (
+    candidate.startsWith(config.paths.webDir) &&
+    existsSync(candidate) &&
+    !pathname.endsWith('/')
+  ) {
     return new Response(Bun.file(candidate));
   }
   return new Response(Bun.file(indexHtml), {

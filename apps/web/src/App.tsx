@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { LeftRail } from './components/LeftRail';
 import { TopBar } from './components/TopBar';
 import { LinkButton } from './components/ui';
-import { environments, projects, services } from './lib/fixtures';
+import { environments, projects } from './lib/fixtures';
 import { useRoute } from './lib/router';
 import { DashboardPage } from './pages/DashboardPage';
 import { NewServicePage } from './pages/NewServicePage';

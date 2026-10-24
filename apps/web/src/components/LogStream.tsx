@@ -16,12 +16,12 @@ export function LogStream({ lines, height = 140 }: LogStreamProps) {
       style={{ height }}
     >
       <div className="flex-1 overflow-y-auto text-text-dim">
-        {lines.map((line, index) => (
-          <div key={`${line.time}-${index}`} className="grid grid-cols-[60px_1fr_12px] gap-2 py-0.5">
+        {lines.map((line) => (
+          <div key={line.seq} className="grid grid-cols-[60px_1fr_12px] gap-2 py-0.5">
             <span className="tabular opacity-50">{line.time}</span>
             <span className="break-all">{line.text}</span>
             <span className="flex items-center">
-              {following && index === lines.length - 1 ? (
+              {following && line.seq === lines.at(-1)?.seq ? (
                 <span className="h-3 w-1.5 animate-blink bg-lime" aria-hidden />
               ) : null}
             </span>

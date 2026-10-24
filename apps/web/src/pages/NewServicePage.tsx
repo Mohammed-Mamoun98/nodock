@@ -44,7 +44,11 @@ export function NewServicePage() {
                     </span>
                     <span
                       className={`mt-0.5 text-ui-sm ${
-                        active ? 'font-medium text-lime' : done ? 'font-medium text-text' : 'text-text-dim'
+                        active
+                          ? 'font-medium text-lime'
+                          : done
+                            ? 'font-medium text-text'
+                            : 'text-text-dim'
                       }`}
                     >
                       {step}

@@ -6,7 +6,8 @@ const id = () =>
     .primaryKey()
     .$defaultFn(() => randomUUID());
 
-const createdAt = () => integer('created_at', { mode: 'timestamp_ms' }).$defaultFn(() => new Date());
+const createdAt = () =>
+  integer('created_at', { mode: 'timestamp_ms' }).$defaultFn(() => new Date());
 
 export const DEPLOYMENT_STATUSES = [
   'queued',

@@ -3,7 +3,10 @@ import type { DeploymentStatus, ServiceState } from './types';
 export type Tone = 'lime' | 'amber' | 'red' | 'steel';
 
 /** Status → what the operator reads. Never colour alone: every state has a word. */
-export const statusMeta: Record<DeploymentStatus, { label: string; tone: Tone; inFlight: boolean }> = {
+export const statusMeta: Record<
+  DeploymentStatus,
+  { label: string; tone: Tone; inFlight: boolean }
+> = {
   queued: { label: 'queued', tone: 'amber', inFlight: true },
   pulling: { label: 'pulling', tone: 'amber', inFlight: true },
   starting: { label: 'starting', tone: 'amber', inFlight: true },
@@ -22,7 +25,10 @@ export const stateMeta: Record<ServiceState, { label: string; tone: Tone; inFlig
 };
 
 /** Card action label follows state — one primary action, never a menu of maybes. */
-export function primaryAction(state: ServiceState): { label: string; kind: 'primary' | 'secondary' } {
+export function primaryAction(state: ServiceState): {
+  label: string;
+  kind: 'primary' | 'secondary';
+} {
   switch (state) {
     case 'building':
       return { label: 'View build', kind: 'primary' };

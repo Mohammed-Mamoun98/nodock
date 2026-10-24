@@ -9,7 +9,11 @@ const base = {
 
 describe('loadConfig', () => {
   test('derives paths and normalises values', () => {
-    const config = loadConfig({ ...base, DATA_DIR: '/srv/nodock', ADMIN_GITHUB_LOGIN: 'Alice, bob' });
+    const config = loadConfig({
+      ...base,
+      DATA_DIR: '/srv/nodock',
+      ADMIN_GITHUB_LOGIN: 'Alice, bob',
+    });
 
     expect(config.url).toBe('https://panel.example.com'); // trailing slash stripped
     expect(config.baseDomain).toBe('apps.example.com');

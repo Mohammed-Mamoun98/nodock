@@ -18,10 +18,13 @@ const filters: { id: Filter; label: string }[] = [
 export function DashboardPage() {
   const [filter, setFilter] = useState<Filter>('all');
 
-  const counts = filters.reduce<Record<Filter, number>>(
-    (acc, f) => ({ ...acc, [f.id]: f.id === 'all' ? services.length : services.filter((s) => s.state === f.id).length }),
-    { all: 0, live: 0, building: 0, failed: 0, stopped: 0 },
-  );
+  const counts: Record<Filter, number> = {
+    all: services.length,
+    live: services.filter((s) => s.state === 'live').length,
+    building: services.filter((s) => s.state === 'building').length,
+    failed: services.filter((s) => s.state === 'failed').length,
+    stopped: services.filter((s) => s.state === 'stopped').length,
+  };
 
   const visible = filter === 'all' ? services : services.filter((s) => s.state === filter);
   const selectedId = services.find((s) => s.state === 'building')?.id ?? services[0]?.id;
@@ -57,7 +60,11 @@ export function DashboardPage() {
           <span className="hidden font-mono text-mono-xs tabular text-text-dim sm:inline">
             last deploy 42s ago
           </span>
-          <LinkButton to="#/services/new" variant="secondary" className="border-lime text-lime hover:bg-lime/10">
+          <LinkButton
+            to="#/services/new"
+            variant="secondary"
+            className="border-lime text-lime hover:bg-lime/10"
+          >
             <Icon name="plus" />
             New service
           </LinkButton>
@@ -86,7 +93,11 @@ export function DashboardPage() {
           <>
             <div className="mx-auto grid w-full max-w-[600px] grid-cols-1 justify-items-center gap-x-12 gap-y-8 lg:grid-cols-2">
               {visible.map((service) => (
-                <ServiceCard key={service.id} service={service} selected={service.id === selectedId} />
+                <ServiceCard
+                  key={service.id}
+                  service={service}
+                  selected={service.id === selectedId}
+                />
               ))}
               {visible.length % 2 === 1 ? <div className="hidden lg:block" aria-hidden /> : null}
             </div>

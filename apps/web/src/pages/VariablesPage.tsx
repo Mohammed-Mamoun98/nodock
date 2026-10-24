@@ -45,13 +45,17 @@ export function VariablesPage({ serviceId }: { serviceId: string }) {
             <option>Staging</option>
           </select>
           <span className="font-mono text-mono-xs text-text-dim">{rows.length} variables</span>
-          <span className="text-ui-sm text-text-dim">Applies to {service?.name ?? serviceId} in Production</span>
+          <span className="text-ui-sm text-text-dim">
+            Applies to {service?.name ?? serviceId} in Production
+          </span>
         </div>
       </div>
 
       {notice ? (
         <div className="mx-6 mb-4 flex items-center justify-between rounded-md border border-amber/30 bg-amber/10 px-3 py-2">
-          <span className="font-mono text-mono-xs text-amber">Variables changed — redeploy to apply</span>
+          <span className="font-mono text-mono-xs text-amber">
+            Variables changed — redeploy to apply
+          </span>
           <div className="flex items-center gap-3">
             <Button variant="ghost" className="h-6 px-2 text-amber hover:text-amber">
               Redeploy {service?.name ?? serviceId}
@@ -99,7 +103,9 @@ export function VariablesPage({ serviceId }: { serviceId: string }) {
                     aria-label={`${row.key} value`}
                     className="h-7 w-full rounded border border-transparent bg-transparent px-2 font-mono text-mono-xs"
                   />
-                  {row.secret ? <span className="font-mono text-[9px] uppercase text-steel">secret</span> : null}
+                  {row.secret ? (
+                    <span className="font-mono text-[9px] uppercase text-steel">secret</span>
+                  ) : null}
                 </div>
                 <div className="flex items-center justify-end gap-2 text-text-dim">
                   {row.secret ? (
