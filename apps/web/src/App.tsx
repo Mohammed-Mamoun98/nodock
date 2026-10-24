@@ -1,53 +1,72 @@
 import { useEffect, useState } from 'react';
+import { LeftRail } from './components/LeftRail';
+import { TopBar } from './components/TopBar';
+import { LinkButton } from './components/ui';
+import { environments, projects, services } from './lib/fixtures';
+import { useRoute } from './lib/router';
+import { DashboardPage } from './pages/DashboardPage';
+import { NewServicePage } from './pages/NewServicePage';
+import { ServicePage } from './pages/ServicePage';
+import { VariablesPage } from './pages/VariablesPage';
 
-interface Health {
-  ok: boolean;
-  database: 'ok' | 'error';
-  uptimeMs: number;
-  version: string;
+/** Real number from the running control plane — the rail proves the product's own thesis. */
+function useControlPlaneRss(): number | null {
+  const [rss, setRss] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/metrics-lite')
+      .then((response) => (response.ok ? (response.json() as Promise<{ rssMb: number }>) : null))
+      .then((data) => {
+        if (!cancelled && data) setRss(data.rssMb);
+      })
+      .catch(() => {
+        /* metrics are a nicety; the panel works without them */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return rss;
 }
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/healthz')
-      .then((r) => r.json() as Promise<Health>)
-      .then(setHealth)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
-  }, []);
+  const route = useRoute();
+  const rss = useControlPlaneRss();
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-3xl flex-col gap-6 p-8">
-      <header className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">nodock</h1>
-        <span className="font-mono text-xs text-neutral-500">v1 scaffold</span>
-      </header>
+    <div className="flex h-full flex-col">
+      <TopBar
+        project="milo"
+        environment="Production"
+        ghcr="ok"
+        avatarUrl="https://i.pravatar.cc/64?u=mohammed"
+      />
 
-      <section className="rounded-xl border border-neutral-800 p-5">
-        <h2 className="mb-3 text-sm font-medium text-neutral-400">Control plane</h2>
-        <dl className="grid grid-cols-3 gap-4 font-mono text-sm">
-          <div>
-            <dt className="text-xs text-neutral-500">status</dt>
-            <dd className={health?.ok ? 'text-emerald-400' : 'text-neutral-300'}>
-              {error ? 'unreachable' : health ? (health.ok ? 'healthy' : 'degraded') : '…'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-neutral-500">database</dt>
-            <dd>{health?.database ?? '…'}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-neutral-500">runtime</dt>
-            <dd>bun {health?.version ?? '…'}</dd>
-          </div>
-        </dl>
-      </section>
+      <div className="flex flex-1 overflow-hidden">
+        <LeftRail
+          projects={projects}
+          environments={environments}
+          activeProject="milo"
+          controlPlaneMb={rss}
+          deploysToday={1}
+        />
 
-      <p className="text-sm text-neutral-500">
-        Projects, service cards, and deploy history land in later milestones.
-      </p>
-    </main>
+        {route.name === 'dashboard' ? <DashboardPage /> : null}
+        {route.name === 'new-service' ? <NewServicePage /> : null}
+        {route.name === 'service' ? <ServicePage serviceId={route.serviceId} /> : null}
+        {route.name === 'variables' ? <VariablesPage serviceId={route.serviceId} /> : null}
+
+        {route.name === 'not-found' ? (
+          <main className="flex flex-1 items-center justify-center p-8">
+            <div className="rounded-lg border border-line bg-surface p-8 text-center">
+              <h1 className="mb-2 text-ui-lg font-medium">No route for {route.path}</h1>
+              <LinkButton to="#/">Back to project</LinkButton>
+            </div>
+          </main>
+        ) : null}
+      </div>
+    </div>
   );
 }

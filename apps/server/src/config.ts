@@ -47,7 +47,10 @@ export interface Config {
 
 /** Throws with every offending variable listed, rather than failing one at a time. */
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  const parsed = envSchema.safeParse(env);
+  // A `.env` copied from `.env.example` carries empty values (`GITHUB_CLIENT_ID=`).
+  // Treat those as absent so optional settings stay optional.
+  const present = Object.fromEntries(Object.entries(env).filter(([, value]) => value !== ''));
+  const parsed = envSchema.safeParse(present);
   if (!parsed.success) {
     const details = parsed.error.issues
       .map((i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`)

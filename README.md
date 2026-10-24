@@ -5,9 +5,12 @@ A lightweight self-hosted PaaS with a Railway-like UX, built for one 2 GB / 1 vC
 Two containers, no Postgres, no Redis. Builds happen in **GitHub Actions**, not on the
 server: nodock pulls the resulting image from GHCR, runs it, routes to it, and reports status.
 
-> Status: **M1 (scaffold) complete** — workspace, Hono server, SQLite + Drizzle schema and
-> migrations, config loader, `/healthz`, `/metrics-lite`, web shell, Docker/compose packaging.
-> Auth, CI, deploys, and routing land in later milestones. See the plan.
+> Status: **M1 complete** (workspace, Hono server, SQLite schema/migrations, config, `/healthz`, CI-less packaging)
+> plus the **dashboard UI ported from the Superdesign canvas** — dashboard grid, service detail,
+> new-service wizard, variables editor, all on mock fixtures. Auth, CI, and real deploys are next.
+
+Routes (hash router, no routing dependency): `#/`, `#/services/new`, `#/services/:id`,
+`#/services/:id/variables`.
 
 ## Layout
 
@@ -22,7 +25,7 @@ docs          measurements, research notes
 
 ```bash
 bun install
-cp .env.example .env          # set NODOCK_SECRET (openssl rand -hex 32), NODOCK_URL, BASE_DOMAIN
+cp .env.example .env          # set NODOCK_SECRET (openssl rand -hex 32); blank optional vars are fine
 
 bun run dev:server            # http://localhost:3000  (bun --smol --watch)
 bun run dev:web               # http://localhost:5173  (Vite proxies /api /auth /webhooks)
@@ -37,6 +40,7 @@ bun run build:web             # then the server serves apps/web/dist
 ## Docs
 
 - `i-wanna-build-sth-compiled-clock.md` — the v1 plan (scope, architecture, budgets, milestones)
+- `.superdesign/design-system.md` — the design contract (tokens, states, component conventions)
 - `docs/measurements.md` — resource budgets vs measured numbers
 - `docs/research/` — external facts that were verified, with sources
 

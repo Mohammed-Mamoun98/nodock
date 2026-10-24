@@ -23,6 +23,24 @@ Notes:
   Re-measure when Dialog + Tabs land, and again at M7 completion.
 - 1-hour idle CPU and 10-service-row load are still outstanding (they need the seed data from M3).
 
+## M1.5 — dashboard UI ported from the Superdesign canvas (2026-10-24, macOS arm64, Bun 1.4.2, Vite 8.3.5)
+
+Drafts ported: dashboard grid (`be90196f` v4), service detail, new-service wizard, variables editor.
+No new runtime dependencies: icons are inline SVG, routing is a 40-line hash router.
+
+| Metric | Budget | Measured | Verdict |
+|---|---|---|---|
+| initial JS (web) | ≤120 KB gz | **76.5 KB gz** (30 modules) | pass |
+| CSS (web) | — | **4.9 KB gz** | pass |
+| control-plane RSS while serving the SPA | ≤80 MB | **44 MB** (`/metrics-lite`) | pass |
+| static asset serving | — | `index.html` no-store, hashed assets 200 | — |
+
+Notes:
+- 69 KB → 76.5 KB for four full screens, which is the shape we wanted: the design system is
+  doing the work, not a component library.
+- No visual QA was performed in this session (no browser). Layout/interaction review still
+  needs a human looking at `bun run dev:web` or the canvas.
+
 ## M1 — verification
 
 - `bun test` → 13 pass / 0 fail (config, health, schema, cascade, host uniqueness).

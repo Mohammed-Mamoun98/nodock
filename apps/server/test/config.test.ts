@@ -26,6 +26,21 @@ describe('loadConfig', () => {
     expect(loadConfig({ ...base, NODOCK_ACCESS_LOG: '0' }).accessLog).toBe(false);
   });
 
+  test('treats blank optional values from a copied .env as absent', () => {
+    const config = loadConfig({
+      ...base,
+      GITHUB_CLIENT_ID: '',
+      GITHUB_CLIENT_SECRET: '',
+      GHCR_TOKEN: '',
+      ADMIN_GITHUB_LOGIN: '',
+    });
+
+    expect(config.github.clientId).toBeUndefined();
+    expect(config.github.clientSecret).toBeUndefined();
+    expect(config.ghcr.token).toBeUndefined();
+    expect(config.adminLogins).toEqual([]);
+  });
+
   test('rejects a short secret', () => {
     expect(() => loadConfig({ ...base, NODOCK_SECRET: 'tooshort' })).toThrow(/NODOCK_SECRET/);
   });
