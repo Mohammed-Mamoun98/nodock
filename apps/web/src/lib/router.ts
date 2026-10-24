@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
 
 export type Route =
-  | { name: 'dashboard' }
-  | { name: 'new-service' }
+  | { name: 'dashboard'; projectId: string | null }
+  | { name: 'new-service'; projectId: string | null }
   | { name: 'service'; serviceId: string }
   | { name: 'variables'; serviceId: string }
   | { name: 'not-found'; path: string };
 
 /**
- * Tiny hash router. Deliberate: a routing library is ~10 KB gz against a 120 KB
- * budget, and these four screens need nothing it provides yet.
+ * Tiny hash router. Deliberate: a routing library is ~10 KB gz against the
+ * frontend budget, and these screens need nothing it provides.
  */
 export function parseRoute(hash: string): Route {
-  const path = hash.replace(/^#/, '') || '/';
+  const raw = hash.replace(/^#/, '') || '/';
+  const [path = '/', query = ''] = raw.split('?');
+  const params = new URLSearchParams(query);
+  const projectId = params.get('project');
 
-  if (path === '/') return { name: 'dashboard' };
-  if (path === '/services/new') return { name: 'new-service' };
+  if (path === '/') return { name: 'dashboard', projectId };
+  if (path === '/services/new') return { name: 'new-service', projectId };
 
   const service = /^\/services\/([^/]+)$/.exec(path);
   if (service?.[1]) return { name: 'service', serviceId: service[1] };
@@ -38,6 +41,6 @@ export function useRoute(): Route {
   return route;
 }
 
-export function href(path: string): string {
-  return `#${path}`;
+export function navigate(path: string): void {
+  window.location.hash = path;
 }

@@ -1,30 +1,15 @@
-import type { DeploymentStatus, ServiceState } from './types';
-
 export type Tone = 'lime' | 'amber' | 'red' | 'steel';
 
-/** Status → what the operator reads. Never colour alone: every state has a word. */
-export const statusMeta: Record<
-  DeploymentStatus,
-  { label: string; tone: Tone; inFlight: boolean }
-> = {
-  queued: { label: 'queued', tone: 'amber', inFlight: true },
-  pulling: { label: 'pulling', tone: 'amber', inFlight: true },
-  starting: { label: 'starting', tone: 'amber', inFlight: true },
-  healthchecking: { label: 'health check', tone: 'amber', inFlight: true },
-  switching: { label: 'switching', tone: 'amber', inFlight: true },
-  live: { label: 'live', tone: 'lime', inFlight: false },
-  failed: { label: 'failed', tone: 'red', inFlight: false },
-  cancelled: { label: 'cancelled', tone: 'steel', inFlight: false },
-};
+import type { ServiceState } from '../lib/view';
 
 export const stateMeta: Record<ServiceState, { label: string; tone: Tone; inFlight: boolean }> = {
   live: { label: 'live', tone: 'lime', inFlight: false },
   building: { label: 'building on github', tone: 'amber', inFlight: true },
   failed: { label: 'failed', tone: 'red', inFlight: false },
   stopped: { label: 'stopped', tone: 'steel', inFlight: false },
+  undeployed: { label: 'not deployed', tone: 'steel', inFlight: false },
 };
-
-/** Card action label follows state — one primary action, never a menu of maybes. */
+/** Card action follows state — one primary action, never a menu of maybes. */
 export function primaryAction(state: ServiceState): {
   label: string;
   kind: 'primary' | 'secondary';
@@ -36,7 +21,30 @@ export function primaryAction(state: ServiceState): {
       return { label: 'Redeploy', kind: 'secondary' };
     case 'stopped':
       return { label: 'Start', kind: 'secondary' };
+    case 'undeployed':
+      return { label: 'Deploy', kind: 'primary' };
     case 'live':
       return { label: 'Open URL', kind: 'secondary' };
   }
 }
+
+export const deploymentStatusMeta: Record<
+  | 'queued'
+  | 'pulling'
+  | 'starting'
+  | 'healthchecking'
+  | 'switching'
+  | 'live'
+  | 'failed'
+  | 'cancelled',
+  { label: string; tone: Tone }
+> = {
+  queued: { label: 'queued', tone: 'amber' },
+  pulling: { label: 'pulling', tone: 'amber' },
+  starting: { label: 'starting', tone: 'amber' },
+  healthchecking: { label: 'health check', tone: 'amber' },
+  switching: { label: 'switching', tone: 'amber' },
+  live: { label: 'live', tone: 'lime' },
+  failed: { label: 'failed', tone: 'red' },
+  cancelled: { label: 'cancelled', tone: 'steel' },
+};

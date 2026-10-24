@@ -1,10 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LeftRail } from './components/LeftRail';
 import { TopBar } from './components/TopBar';
 import { LinkButton } from './components/ui';
-import { fetchControlPlaneRss, fetchMe, signOut, type Me } from './lib/api';
-import { environments, projects } from './lib/fixtures';
+import {
+  fetchControlPlaneRss,
+  fetchMe,
+  getProjectOverview,
+  listProjects,
+  signOut,
+  type Me,
+  type ProjectOverview,
+  type ProjectSummary,
+  type ApiError,
+} from './lib/api';
 import { useRoute } from './lib/router';
+import { useAsync } from './lib/useAsync';
+import { CreateProjectPage } from './pages/CreateProjectPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NewServicePage } from './pages/NewServicePage';
@@ -31,8 +42,7 @@ export default function App() {
 
     fetchMe()
       .then((me) => {
-        if (cancelled) return;
-        setSession(me ? { status: 'authenticated', me } : { status: 'anonymous' });
+        if (!cancelled) setSession(me ? { status: 'authenticated', me } : { status: 'anonymous' });
       })
       .catch(() => {
         if (!cancelled) setSession({ status: 'anonymous' });
@@ -47,6 +57,22 @@ export default function App() {
     };
   }, []);
 
+  const authenticated = session.status === 'authenticated';
+
+  const projects = useAsync(
+    () => (authenticated ? listProjects() : Promise.resolve({ projects: [] as ProjectSummary[] })),
+    [authenticated],
+  );
+
+  const requestedProjectId = route.name === 'dashboard' ? route.projectId : null;
+  const projectList = useMemo(() => projects.data?.projects ?? [], [projects.data]);
+  const activeProjectId = requestedProjectId ?? projectList[0]?.id ?? null;
+
+  const overview = useAsync<ProjectOverview | null>(
+    () => (activeProjectId ? getProjectOverview(activeProjectId) : Promise.resolve(null)),
+    [activeProjectId],
+  );
+
   if (session.status === 'loading') {
     return (
       <div className="flex h-full items-center justify-center bg-canvas">
@@ -59,33 +85,55 @@ export default function App() {
     return <LoginPage />;
   }
 
-  const me = session.me;
+  const needsProject = !projects.loading && projectList.length === 0;
 
   return (
     <div className="flex h-full flex-col">
       <TopBar
-        project="milo"
-        environment="Production"
-        ghcr="ok"
-        avatarUrl={me.avatarUrl}
-        login={me.login}
-        needsReconnect={me.needsReconnect}
+        project={overview.data?.project.name ?? 'no project'}
+        environment={overview.data?.environments[0]?.name ?? 'Production'}
+        ghcr={session.me.needsReconnect ? 'warn' : 'ok'}
+        avatarUrl={session.me.avatarUrl}
+        login={session.me.login}
+        needsReconnect={session.me.needsReconnect}
         onSignOut={handleSignOut}
       />
 
       <div className="flex flex-1 overflow-hidden">
         <LeftRail
-          projects={projects}
-          environments={environments}
-          activeProject="milo"
+          projects={projectList}
+          environments={overview.data?.environments ?? []}
+          activeProjectId={activeProjectId}
+          activeEnvId={overview.data?.environments[0]?.id ?? null}
           controlPlaneMb={rss}
-          deploysToday={1}
         />
 
-        {route.name === 'dashboard' ? <DashboardPage /> : null}
-        {route.name === 'new-service' ? <NewServicePage /> : null}
-        {route.name === 'service' ? <ServicePage serviceId={route.serviceId} /> : null}
-        {route.name === 'variables' ? <VariablesPage serviceId={route.serviceId} /> : null}
+        {needsProject ? (
+          <CreateProjectPage onCreated={projects.reload} />
+        ) : (
+          <>
+            {route.name === 'dashboard' && activeProjectId ? (
+              <DashboardPage
+                projectId={activeProjectId}
+                overview={overview.data}
+                error={overview.error as ApiError | null}
+                loading={overview.loading}
+                reload={() => {
+                  overview.reload();
+                  projects.reload();
+                }}
+              />
+            ) : null}
+
+            {route.name === 'new-service' ? (
+              <NewServicePage projectId={route.projectId ?? activeProjectId ?? ''} />
+            ) : null}
+
+            {route.name === 'service' ? <ServicePage serviceId={route.serviceId} /> : null}
+
+            {route.name === 'variables' ? <VariablesPage serviceId={route.serviceId} /> : null}
+          </>
+        )}
 
         {route.name === 'not-found' ? (
           <main className="flex flex-1 items-center justify-center p-8">

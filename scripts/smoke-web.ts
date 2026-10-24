@@ -39,33 +39,79 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id);
 // The only calls the shell makes; answer them locally.
 const anonymous = process.env.SMOKE_ANONYMOUS === '1';
 
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+}
+
 g.fetch = async (input: string | URL | Request) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   if (url.includes('/api/me')) {
     if (anonymous) return new Response(null, { status: 401 });
-    return new Response(
-      JSON.stringify({
-        login: 'mohammed',
-        avatarUrl: null,
-        scopes: ['repo', 'workflow'],
-        missingScopes: [],
-        needsReconnect: false,
-      }),
-      { headers: { 'content-type': 'application/json' } },
-    );
+    return json({
+      login: 'mohammed',
+      avatarUrl: null,
+      scopes: ['repo', 'workflow'],
+      missingScopes: [],
+      needsReconnect: false,
+    });
   }
-  return new Response(
-    JSON.stringify({
-      ok: true,
-      database: 'ok',
-      uptimeMs: 1,
-      version: '1.4.2',
-      rssMb: 27,
-      heapUsedMb: 4,
-      sseClients: 0,
-    }),
-    { headers: { 'content-type': 'application/json' } },
-  );
+
+  // Signed-in shell fetches: project list, then the project overview.
+  if (url.includes('/api/projects/p1')) {
+    return json({
+      project: { id: 'p1', name: 'milo', slug: 'milo' },
+      environments: [
+        { id: 'e1', name: 'Production', slug: 'production', isDefault: true, serviceCount: 1 },
+      ],
+      services: [
+        {
+          id: 's1',
+          name: 'milo-api',
+          slug: 'milo-api',
+          repoFullName: 'mohammed/milo',
+          dockerfilePath: 'Dockerfile',
+          contextPath: '.',
+          containerPort: 3000,
+          memoryLimitMb: null,
+          serviceEnvs: [
+            {
+              id: 'se1',
+              environmentId: 'e1',
+              branch: 'main',
+              healthPath: '/healthz',
+              generatedHost: 'milo-api.apps.localhost',
+              customDomain: null,
+              latestDeployment: {
+                id: 'd1',
+                status: 'live',
+                trigger: 'push',
+                commitSha: 'a3f9c21',
+                ciRunUrl: null,
+                error: null,
+                createdAt: new Date().toISOString(),
+              },
+            },
+          ],
+        },
+      ],
+    });
+  }
+
+  if (url.includes('/api/projects')) {
+    return json({
+      projects: [{ id: 'p1', name: 'milo', slug: 'milo', serviceCount: 1 }],
+    });
+  }
+
+  return json({
+    ok: true,
+    database: 'ok',
+    uptimeMs: 1,
+    version: '1.4.2',
+    rssMb: 27,
+    heapUsedMb: 4,
+    sseClients: 0,
+  });
 };
 
 window.document.body.innerHTML = '<div id="root"></div>';
@@ -88,8 +134,8 @@ const checks: [string, boolean][] = anonymous
       ['product mark rendered', html.includes('nodock')],
       ['project switcher rendered', html.includes('milo')],
       ['service card rendered', html.includes('milo-api')],
-      ['failure copy names the fix', html.includes('add GHCR_TOKEN')],
-      ['ingress node rendered', html.includes('caddy')],
+      ['real host rendered', html.includes('milo-api.apps.localhost')],
+      ['deployment state rendered', html.includes('live')],
       ['filters rendered', html.includes('Building')],
       ['state vocabulary rendered', html.includes('live')],
       ['sign out affordance rendered', html.includes('sign out')],

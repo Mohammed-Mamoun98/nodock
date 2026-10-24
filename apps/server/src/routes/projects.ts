@@ -1,9 +1,9 @@
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
-import { environments, projects, serviceEnvs, services } from '../db/schema';
+import { deployments, environments, projects, serviceEnvs, services } from '../db/schema';
 import { apiError, validationError } from '../http';
 import { slugify, uniqueValue } from '../lib/slug';
 
@@ -109,6 +109,28 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
       .orderBy(asc(services.createdAt))
       .all();
 
+    const serviceIds = serviceRows.map((row) => row.id);
+    const envLinks = serviceIds.length
+      ? db.select().from(serviceEnvs).where(inArray(serviceEnvs.serviceId, serviceIds)).all()
+      : [];
+
+    const envLinkIds = envLinks.map((row) => row.id);
+    const recentDeployments = envLinkIds.length
+      ? db
+          .select()
+          .from(deployments)
+          .where(inArray(deployments.serviceEnvId, envLinkIds))
+          .orderBy(desc(deployments.createdAt))
+          .all()
+      : [];
+
+    const latestByEnvLink = new Map<string, (typeof recentDeployments)[number]>();
+    for (const deployment of recentDeployments) {
+      if (!latestByEnvLink.has(deployment.serviceEnvId)) {
+        latestByEnvLink.set(deployment.serviceEnvId, deployment);
+      }
+    }
+
     return c.json({
       project: serializeProject(project),
       environments: envRows,
@@ -121,6 +143,30 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
         contextPath: row.contextPath,
         containerPort: row.containerPort,
         memoryLimitMb: row.memoryLimitMb,
+        serviceEnvs: envLinks
+          .filter((link) => link.serviceId === row.id)
+          .map((link) => {
+            const latest = latestByEnvLink.get(link.id);
+            return {
+              id: link.id,
+              environmentId: link.environmentId,
+              branch: link.branch,
+              healthPath: link.healthPath,
+              generatedHost: link.generatedHost,
+              customDomain: link.customDomain,
+              latestDeployment: latest
+                ? {
+                    id: latest.id,
+                    status: latest.status,
+                    trigger: latest.trigger,
+                    commitSha: latest.commitSha,
+                    ciRunUrl: latest.ciRunUrl,
+                    error: latest.error,
+                    createdAt: iso(latest.createdAt),
+                  }
+                : null,
+            };
+          }),
       })),
     });
   });

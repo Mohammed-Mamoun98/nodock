@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { ServiceCard } from '../components/ServiceCard';
 import { LinkButton } from '../components/ui';
-import { services } from '../lib/fixtures';
-import type { ServiceState } from '../lib/types';
+import type { ApiError, ProjectOverview } from '../lib/api';
+import { toServiceView, type ServiceState } from '../lib/view';
 
 type Filter = 'all' | ServiceState;
 
@@ -13,19 +13,29 @@ const filters: { id: Filter; label: string }[] = [
   { id: 'building', label: 'Building' },
   { id: 'failed', label: 'Failed' },
   { id: 'stopped', label: 'Stopped' },
+  { id: 'undeployed', label: 'Not deployed' },
 ];
 
-export function DashboardPage() {
+interface DashboardPageProps {
+  projectId: string;
+  overview: ProjectOverview | null;
+  error: ApiError | null;
+  loading: boolean;
+  reload: () => void;
+}
+
+export function DashboardPage({ projectId, overview, error, loading, reload }: DashboardPageProps) {
   const [filter, setFilter] = useState<Filter>('all');
 
+  const services = (overview?.services ?? []).map(toServiceView);
   const counts: Record<Filter, number> = {
     all: services.length,
     live: services.filter((s) => s.state === 'live').length,
     building: services.filter((s) => s.state === 'building').length,
     failed: services.filter((s) => s.state === 'failed').length,
     stopped: services.filter((s) => s.state === 'stopped').length,
+    undeployed: services.filter((s) => s.state === 'undeployed').length,
   };
-
   const visible = filter === 'all' ? services : services.filter((s) => s.state === filter);
   const selectedId = services.find((s) => s.state === 'building')?.id ?? services[0]?.id;
 
@@ -57,11 +67,15 @@ export function DashboardPage() {
         </nav>
 
         <div className="flex items-center gap-4">
-          <span className="hidden font-mono text-mono-xs tabular text-text-dim sm:inline">
-            last deploy 42s ago
-          </span>
+          <button
+            type="button"
+            onClick={reload}
+            className="hidden font-mono text-mono-xs text-text-dim transition-colors hover:text-text sm:inline"
+          >
+            refresh
+          </button>
           <LinkButton
-            to="#/services/new"
+            to={`#/services/new?project=${projectId}`}
             variant="secondary"
             className="border-lime text-lime hover:bg-lime/10"
           >
@@ -72,7 +86,27 @@ export function DashboardPage() {
       </div>
 
       <div className="relative flex flex-1 flex-col p-8">
-        {visible.length === 0 ? (
+        {loading && !overview ? (
+          <p className="mx-auto font-mono text-mono-xs text-text-dim">loading services…</p>
+        ) : null}
+
+        {error ? (
+          <div className="mx-auto flex w-[420px] flex-col gap-3 rounded-lg border border-red/30 bg-surface p-6">
+            <h2 className="text-ui-base font-medium text-red">Could not load this project</h2>
+            <p className="font-mono text-mono-xs text-text-dim">
+              {error.code} · {error.message}
+            </p>
+            <button
+              type="button"
+              onClick={reload}
+              className="self-start rounded border border-line px-3 py-1 text-ui-sm hover:bg-surface-2"
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
+
+        {!error && !loading && visible.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="flex w-[400px] flex-col items-center rounded-lg border border-dashed border-line bg-surface/50 p-8 text-center">
               <h3 className="mb-2 font-sans text-ui-lg text-text">
@@ -80,16 +114,22 @@ export function DashboardPage() {
               </h3>
               <p className="mb-6 font-sans text-ui-sm text-text-dim">
                 {services.length === 0
-                  ? 'Connect a repository to deploy your first service.'
+                  ? 'Connect a repository that has a Dockerfile to deploy your first service.'
                   : 'Nothing matches this filter right now.'}
               </p>
-              <LinkButton to="#/services/new" variant="primary" className="px-4">
+              <LinkButton
+                to={`#/services/new?project=${projectId}`}
+                variant="primary"
+                className="border-0 px-4"
+              >
                 <Icon name="plus" />
                 New service
               </LinkButton>
             </div>
           </div>
-        ) : (
+        ) : null}
+
+        {services.length > 0 ? (
           <>
             <div className="mx-auto grid w-full max-w-[600px] grid-cols-1 justify-items-center gap-x-12 gap-y-8 lg:grid-cols-2">
               {visible.map((service) => (
@@ -109,7 +149,7 @@ export function DashboardPage() {
               </span>
             </div>
           </>
-        )}
+        ) : null}
       </div>
     </main>
   );

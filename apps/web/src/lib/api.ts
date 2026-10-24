@@ -1,3 +1,49 @@
+export interface ApiErrorBody {
+  error: { code: string; message: string; details?: unknown };
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details: unknown;
+
+  constructor(status: number, code: string, message: string, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    ...init,
+    headers: {
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...(init.headers as Record<string, string> | undefined),
+    },
+  });
+
+  if (response.status === 204) return undefined as T;
+
+  const text = await response.text();
+  const parsed: unknown = text ? JSON.parse(text) : null;
+
+  if (!response.ok) {
+    const body = parsed as ApiErrorBody | null;
+    throw new ApiError(
+      response.status,
+      body?.error?.code ?? 'http_error',
+      body?.error?.message ?? `Request failed with ${response.status}`,
+      body?.error?.details,
+    );
+  }
+
+  return parsed as T;
+}
+
 export interface Me {
   login: string;
   avatarUrl: string | null;
@@ -6,25 +52,147 @@ export interface Me {
   needsReconnect: boolean;
 }
 
-/** Returns null when the session is absent or expired (401), not an error. */
 export async function fetchMe(): Promise<Me | null> {
   const response = await fetch('/api/me', { credentials: 'same-origin' });
   if (response.status === 401) return null;
-  if (!response.ok) throw new Error(`GET /api/me failed with ${response.status}`);
+  if (!response.ok) throw new ApiError(response.status, 'http_error', 'Could not load session');
   return (await response.json()) as Me;
 }
 
-export async function signOut(): Promise<void> {
-  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+export function signOut(): Promise<void> {
+  return request<void>('/api/auth/logout', { method: 'POST' });
 }
 
-export async function fetchControlPlaneRss(): Promise<number | null> {
-  try {
-    const response = await fetch('/metrics-lite');
-    if (!response.ok) return null;
-    const data = (await response.json()) as { rssMb: number };
-    return data.rssMb;
-  } catch {
-    return null;
-  }
+export function fetchControlPlaneRss(): Promise<number | null> {
+  return fetch('/metrics-lite')
+    .then((response) => (response.ok ? (response.json() as Promise<{ rssMb: number }>) : null))
+    .then((data) => data?.rssMb ?? null)
+    .catch(() => null);
+}
+
+export interface ProjectSummary {
+  id: string;
+  name: string;
+  slug: string;
+  serviceCount?: number;
+  createdAt?: string;
+}
+
+export interface EnvironmentSummary {
+  id: string;
+  name: string;
+  slug: string;
+  isDefault: boolean;
+  serviceCount: number;
+}
+
+export type DeploymentStatus =
+  | 'queued'
+  | 'pulling'
+  | 'starting'
+  | 'healthchecking'
+  | 'switching'
+  | 'live'
+  | 'failed'
+  | 'cancelled';
+
+export interface LatestDeployment {
+  id: string;
+  status: DeploymentStatus;
+  trigger: 'manual' | 'push' | 'rollback';
+  commitSha: string | null;
+  ciRunUrl: string | null;
+  error: string | null;
+  createdAt: string | null;
+}
+
+export interface ServiceEnvSummary {
+  id: string;
+  environmentId: string;
+  branch: string;
+  healthPath: string | null;
+  generatedHost: string;
+  customDomain: string | null;
+  latestDeployment: LatestDeployment | null;
+}
+
+export interface ServiceSummary {
+  id: string;
+  name: string;
+  slug: string;
+  repoFullName: string;
+  dockerfilePath: string;
+  contextPath: string;
+  containerPort: number | null;
+  memoryLimitMb: number | null;
+  serviceEnvs: ServiceEnvSummary[];
+}
+
+export interface ProjectOverview {
+  project: ProjectSummary;
+  environments: EnvironmentSummary[];
+  services: ServiceSummary[];
+}
+
+export interface VariableRow {
+  key: string;
+  value: string;
+  isSecret: boolean;
+  hidden?: boolean;
+}
+
+export function listProjects(): Promise<{ projects: ProjectSummary[] }> {
+  return request('/api/projects');
+}
+
+export function createProject(name: string): Promise<{ project: ProjectSummary }> {
+  return request('/api/projects', { method: 'POST', body: JSON.stringify({ name }) });
+}
+
+export function getProjectOverview(projectId: string): Promise<ProjectOverview> {
+  return request(`/api/projects/${projectId}`);
+}
+
+export function createService(
+  projectId: string,
+  input: {
+    name: string;
+    repoFullName: string;
+    branch: string;
+    dockerfilePath?: string;
+    contextPath?: string;
+    containerPort?: number;
+  },
+): Promise<{ service: { id: string }; serviceEnv: { generatedHost: string } }> {
+  return request(`/api/projects/${projectId}/services`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function getVariables(
+  serviceId: string,
+  envId: string,
+  reveal = false,
+): Promise<{ variables: VariableRow[] }> {
+  return request(`/api/services/${serviceId}/envs/${envId}/variables${reveal ? '?reveal=1' : ''}`);
+}
+
+export function saveVariables(
+  serviceId: string,
+  envId: string,
+  variables: { key: string; value: string; isSecret: boolean }[],
+): Promise<{ count: number }> {
+  return request(`/api/services/${serviceId}/envs/${envId}/variables`, {
+    method: 'PUT',
+    body: JSON.stringify({ variables }),
+  });
+}
+
+export type ServiceRecord = Omit<ServiceSummary, 'serviceEnvs'>;
+
+export function getService(
+  serviceId: string,
+): Promise<{ service: ServiceRecord; serviceEnvs: ServiceEnvSummary[] }> {
+  return request(`/api/services/${serviceId}`);
 }

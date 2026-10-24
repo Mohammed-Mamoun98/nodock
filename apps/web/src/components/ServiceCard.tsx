@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { primaryAction, stateMeta } from '../lib/status';
-import type { Service } from '../lib/types';
+import type { ServiceView } from '../lib/view';
 import { Icon } from './Icon';
 import { BranchChip, Button, StatusWord } from './ui';
 
-export function ServiceCard({ service, selected }: { service: Service; selected: boolean }) {
+export function ServiceCard({ service, selected }: { service: ServiceView; selected: boolean }) {
   const meta = stateMeta[service.state];
   const action = primaryAction(service.state);
   const [copied, setCopied] = useState(false);
@@ -39,25 +39,32 @@ export function ServiceCard({ service, selected }: { service: Service; selected:
       </a>
 
       <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
-        <Button variant={action.kind}>
-          {service.state === 'live' ? (
-            <>
-              {action.label}
-              <Icon name="arrow-up-right" />
-            </>
-          ) : (
-            action.label
-          )}
-        </Button>
+        {service.state === 'live' && service.host ? (
+          <a
+            href={`https://${service.host}`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-[28px] items-center gap-1.5 rounded-[6px] border border-line px-3 text-ui-sm transition-colors hover:bg-surface-2"
+          >
+            Open URL
+            <Icon name="arrow-up-right" />
+          </a>
+        ) : (
+          <Button variant={action.kind}>{action.label}</Button>
+        )}
 
         <button
           type="button"
-          aria-label={`Copy ${service.name} URL`}
-          onClick={() => setCopied(true)}
-          className="p-1 text-text-dim transition-colors hover:text-text"
+          aria-label={`Copy ${service.name} hostname`}
+          onClick={() => {
+            if (service.host) void navigator.clipboard?.writeText(service.host);
+            setCopied(true);
+          }}
           onBlur={() => setCopied(false)}
+          disabled={!service.host}
+          className="p-1 text-text-dim transition-colors hover:text-text disabled:opacity-40"
         >
-          <Icon name={copied ? 'check' : 'more-horizontal'} />
+          <Icon name={copied ? 'check' : 'copy'} />
         </button>
       </div>
     </article>
