@@ -117,6 +117,43 @@ describe('doctor', () => {
     expect(find(report, 'dns: panel')?.detail).toContain('other.example.com');
   });
 
+  test('a token without read:packages fails preflight instead of at pull time', async () => {
+    const withToken = loadConfig({
+      NODOCK_SECRET: 'x'.repeat(32),
+      NODOCK_URL: 'https://panel.example.com',
+      BASE_DOMAIN: 'apps.example.com',
+      ADMIN_GITHUB_LOGIN: 'mohammed',
+      GITHUB_CLIENT_ID: 'id',
+      GITHUB_CLIENT_SECRET: 'secret',
+      CADDY_ADMIN_URL: 'http://caddy:2019',
+      DATA_DIR: '/tmp/nodock-doctor',
+      GHCR_USER: 'mohammed',
+      GHCR_TOKEN: 'ghp_example',
+    });
+
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('api.github.com/user')) {
+        return new Response('{}', {
+          status: 200,
+          headers: { 'x-oauth-scopes': 'read:user, repo, workflow' },
+        });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    try {
+      const report = await runDoctor(deps({ config: withToken }));
+      const check = find(report, 'ghcr pull');
+      expect(check?.status).toBe('fail');
+      expect(check?.detail).toContain('read:packages');
+      expect(check?.hint).toContain('Regenerate');
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   test('unresolvable DNS is a warning, not a blocker', async () => {
     const report = await withFetchOk(() => runDoctor(deps({ resolve: async () => null })));
 

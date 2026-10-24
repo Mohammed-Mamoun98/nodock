@@ -99,20 +99,63 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
         },
   );
 
-  add(
-    config.ghcr.token
-      ? {
+  if (!config.ghcr.token) {
+    add({
+      name: 'ghcr pull',
+      status: 'warn',
+      detail: 'no GHCR_TOKEN — only public packages can be pulled',
+      hint: 'Add a classic PAT with read:packages if your images are private',
+    });
+  } else {
+    // A valid token with the wrong scope logs in fine and is still denied at pull
+    // time ("unauthorized"/"denied"), which is exactly what this prevents.
+    try {
+      const response = await fetch('https://api.github.com/user', {
+        headers: { authorization: `token ${config.ghcr.token}`, 'user-agent': 'nodock' },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (response.status === 401) {
+        add({
           name: 'ghcr pull',
-          status: 'ok',
-          detail: `token set for ${config.ghcr.user ?? 'unknown user'}`,
+          status: 'fail',
+          detail: 'GHCR_TOKEN was rejected by GitHub',
+          hint: 'The token is expired or revoked — create a new classic PAT',
+        });
+      } else {
+        const granted = response.headers.get('x-oauth-scopes');
+        const scopes = granted ? granted.split(',').map((scope) => scope.trim()) : null;
+
+        if (scopes && !scopes.includes('read:packages')) {
+          add({
+            name: 'ghcr pull',
+            status: 'fail',
+            detail: `token lacks read:packages (has: ${scopes.join(', ') || 'none'})`,
+            hint: 'Regenerate the classic PAT with read:packages ticked, then restart nodock',
+          });
+        } else if (!scopes) {
+          add({
+            name: 'ghcr pull',
+            status: 'warn',
+            detail: 'fine-grained token — package scope cannot be verified from here',
+            hint: 'Make sure its Packages permission is Read for this package',
+          });
+        } else {
+          add({
+            name: 'ghcr pull',
+            status: 'ok',
+            detail: `token has read:packages (${config.ghcr.user ?? 'unknown user'})`,
+          });
         }
-      : {
-          name: 'ghcr pull',
-          status: 'warn',
-          detail: 'no GHCR_TOKEN — only public packages can be pulled',
-          hint: 'Add a classic PAT with read:packages if your images are private',
-        },
-  );
+      }
+    } catch {
+      add({
+        name: 'ghcr pull',
+        status: 'warn',
+        detail: 'could not verify the GHCR token (no outbound access?)',
+      });
+    }
+  }
 
   // --- database -----------------------------------------------------------
   try {
