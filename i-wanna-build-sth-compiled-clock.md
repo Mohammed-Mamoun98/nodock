@@ -302,18 +302,55 @@ Install steps in the README: create the GitHub OAuth App with callback `<NODOCK_
 - Docker Desktop must be running locally (verified: the socket is unavailable when stopped); on macOS point `DOCKER_HOST` at its socket.
 - CI integration can be manually tested against a throwaway GitHub repo; the full loop is testable locally with a `GitHubClient` fake that simulates dispatch + callbacks.
 - `bun test` runs entirely on fakes and needs no Docker or GitHub.
+- Project-specific agents (e.g. a `deploy-reviewer` that knows the state machine and legal transitions) live in `.pi/agents/**`. Project agent discovery is ignored when the session declines project trust, so anything load-bearing — the state machine, the legal transitions, the security constraints — stays in `docs/`, never only in an agent prompt.
+
+## Build process (delegation)
+
+**Frozen contracts.** No parallel lane opens until these are committed: `apps/server/src/db/schema.ts` (Drizzle), `packages/shared/**` Zod DTOs for every request/response, and the `DockerAdapter`, `GitHubClient`, `CaddyAdmin` interfaces with their fakes. Contract changes go through the parent only.
+
+**Rules.** One writer per worktree, never two children in one file. The parent owns user intent, contract freezes, integration, and final acceptance. Children don't spawn subagents unless fanout is explicitly delegated. Model routing lives in settings, not in this doc (fast tier for scouts/workers, strong tier for reviews, top reasoning for oracle). No hard `toolBudget` on mutation workers. `worktree: true` refuses to launch on a dirty checkout and untracked files count, so the plan doc and any contract file must be committed before a writer lane opens.
+
+**Lanes.**
+
+| Milestone | Shape |
+|---|---|
+| M0 | `researcher` → `evidence-auditor` on external facts; `oracle` on this doc; `council-mode` on the Bun-vs-Go and Preact-vs-React calls |
+| M1–M4 | Sequential `worker`; async `reviewer` on each diff (auth, CI, and schema are not parallel-friendly) |
+| M5–M6 | **Parallel**: (a) DockerAdapter real+fake, queue, state machine ‖ (b) Caddy renderer, admin client, `/ask`, boot reconciliation |
+| M7 | **Parallel**: (a) `apps/server` routes against frozen DTOs ‖ (b) `apps/web` against the same DTOs |
+| M8–M9 | `worker` (packaging) ‖ `researcher` (VPS/compose gotchas) ‖ `reviewer` (hardening) |
+
+**Handoff.** Each lane reports changed files plus the path to its `bun test` output. Lane-green is not merge-green: the parent re-runs the full suite after integration.
 
 ## Milestones
+
+### M0 — Verify external facts (before scaffolding)
+
+A `researcher` run, then an `evidence-auditor` pass. Output: `docs/research/github-caddy-facts.md`, every claim carrying a source URL. Unresolved items are listed explicitly rather than guessed.
+
+1. Which OAuth scope is required to create/update `.github/workflows/*` via the Contents API, and does upgrading from `repo` force the user to re-consent?
+2. Actions secrets API: `GET .../actions/secrets/public-key` + libsodium sealed box (`tweetnacl`) — exact request shape, required scope, and behaviour when Actions is disabled on the repo.
+3. GHCR: does `ghcr.io/<owner>/<repo>/<slug>` auto-associate with the repository for a `GITHUB_TOKEN` push, and what does package visibility/permission look like for nested versus repo-named packages?
+4. `repository_dispatch`: confirm the workflow must exist on the default branch, the 10-property / 64 KB `client_payload` limit, and the failure mode when no matching workflow exists.
+5. Caddy: the `on_demand_tls { ask }` contract (which status codes are authoritative, caching), whether `POST /load` aborts in-flight ACME, and how to bind `admin` to a unix socket or a single network only.
+
+### M0 — Decisions (council-mode, recorded here)
+
+- **Bun + React vs Go/Rust + HTMX-SSR** — advisor council, cross-examined; verdict and rationale recorded in "Considered and rejected". Revisit only if M1 measurement misses the 80 MB idle budget or a sub-1 GB floor becomes a product requirement. Hard deadline for revisiting: the start of M7, because the React UI is the point of no return.
+- **Preact alias vs React** — trial on Dialog + Tabs first; revert the alias (cost: ~30 KB) if either breaks.
+- **Tier A now, Tier B later** — decision plus its trigger conditions copied here with a date.
 
 1. **Scaffold** — Bun workspace, Hono server, Vite/shadcn web, SQLite + Drizzle migrations, config loader, `/healthz`, dev compose.
 2. **Auth** — GitHub OAuth, allowlist, sessions, SPA guard, `GET /api/me`.
 3. **Model + CRUD + GitHub reads** — projects, environments, services, service_envs, variables; repo/branch pickers; encryption helpers.
 4. **CI integration** — generic workflow template; commit workflow + create Actions secret (sealed box); register push webhook; dispatch on manual/push; verify callbacks; CI status in settings.
-5. **Deploy core** — DockerAdapter (real + fake), pull/run/health/switch, SSE deploy logs, history. **Usable MVP after this step.**
-6. **Caddy** — config renderer, admin client, generated/custom hosts, on-demand TLS ask, boot reconciliation.
-7. **UI completion** — service cards, all tabs, log viewer, variable editor, rollback, CI enable/update flows, settings.
+5. **Deploy core — parallel lane (a).** DockerAdapter (real + fake), queue, state machine, pull/run/health/switch, SSE deploy logs, history. Opens in parallel with 6 once the adapter interfaces are frozen.
+6. **Caddy — parallel lane (b).** Config renderer, admin client, generated/custom hosts, on-demand TLS ask, boot reconciliation. Runs in the same wave as 5. **Usable MVP once 5 and 6 converge.**
+7. **Server + web — parallel lanes.** (a) `apps/server` routes + Zod DTOs. (b) `apps/web` service cards, all tabs, log viewer, variable editor, rollback, CI enable/update flows, settings. The web lane starts only once the API contract file is committed.
 8. **Packaging** — Dockerfile, compose, `install.sh`, `.env.example`, docs, sample Dockerfile app.
 9. **Hardening** — restart recovery, watchdog, image/log pruning, error surfaces, rate limits on CI/webhook/ask endpoints, tests.
+
+**Review gate (every milestone).** A fresh-context `reviewer` checks the milestone diff against its acceptance criteria before the parent marks it done. Reviews run async and never block a *different* lane's start.
 
 **Cut if needed:** multi-env UI (keep the schema + default env; add the switcher later), custom domains (generated hosts only), restart/stop buttons.
 
@@ -321,6 +358,7 @@ Install steps in the README: create the GitHub OAuth App with callback `<NODOCK_
 
 - **Unit** (`bun test`): encryption round-trip, session hashing, webhook HMAC, CI token hashing, workflow template rendering, dispatch payload shape, image-ref normalization, slug/host generation and uniqueness, Caddy config rendering (snapshot), state-machine transitions, supersede/cancel.
 - **Integration**: API tests against in-memory SQLite with **fake GitHub** (dispatch/callback capture) and **fake DockerAdapter** — manual deploy, push-triggered deploy, CI failure, stale-callback watchdog, rollback, interrupted restart.
+- **Delegation gates** (per milestone): each lane passes `bun test` in its own worktree before handoff and reports changed files plus its test-output path; lane-green is not merge-green, so the parent re-runs the full suite after integration.
 - **Manual E2E** on the VPS (or local Docker for run/routing):
   1. `./scripts/install.sh`, configure the OAuth app, DNS (`panel`, `*.apps`), swap.
   2. Log in, create a project → service from a sample repo with a Dockerfile, enable CI (verify the workflow commit + secret), deploy, open the generated HTTPS URL.
