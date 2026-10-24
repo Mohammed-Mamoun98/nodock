@@ -64,3 +64,19 @@ const server = Bun.serve({
 });
 
 console.log(`[nodock] listening on :${server.port} (base domain ${config.baseDomain})`);
+
+// Boot diagnostics: most "it ignores my .env" reports are this, so say it out loud.
+const githubReady = Boolean(config.github.clientId && config.github.clientSecret);
+console.log(
+  `[nodock] github oauth: ${githubReady ? 'configured' : 'NOT configured — set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET'}`,
+);
+console.log(
+  `[nodock] admin allowlist: ${
+    config.adminLogins.length > 0
+      ? config.adminLogins.join(', ')
+      : 'EMPTY — nobody can sign in (set ADMIN_GITHUB_LOGIN)'
+  }`,
+);
+console.log(
+  `[nodock] ghcr pull: ${config.ghcr.token ? 'token set' : 'anonymous (public packages only)'}`,
+);

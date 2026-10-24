@@ -6,8 +6,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev:server": "bun run --cwd apps/server dev",
+    "dev:server": "bun --smol --watch apps/server/src/index.ts",
     "dev:web": "bun run --cwd apps/web dev",
+    "start:server": "bun --smol apps/server/src/index.ts",
     "build:web": "bun run --cwd apps/web build",
     "smoke:web": "bun run build:web && bun scripts/smoke-web.ts && SMOKE_ANONYMOUS=1 bun scripts/smoke-web.ts",
     "lint": "oxlint",

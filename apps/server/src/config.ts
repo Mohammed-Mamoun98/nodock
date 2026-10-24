@@ -11,7 +11,8 @@ const envSchema = z.object({
   ADMIN_GITHUB_LOGIN: z.string().default(''),
   NODOCK_URL: z.string().url().default('http://localhost:3000'),
   BASE_DOMAIN: z.string().min(1).default('apps.localhost'),
-  DATA_DIR: z.string().min(1).default('/data'),
+  /** Container sets /data; a host run defaults to ./.data in the repo. */
+  DATA_DIR: z.string().min(1).default('./.data'),
   PORT: z.coerce.number().int().positive().default(3000),
   /** Caddy access logs are off by default: they cost CPU and disk on a small box. */
   NODOCK_ACCESS_LOG: z

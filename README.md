@@ -27,7 +27,7 @@ docs          measurements, research notes
 bun install
 cp .env.example .env          # set NODOCK_SECRET (openssl rand -hex 32); blank optional vars are fine
 
-bun run dev:server            # http://localhost:3000  (bun --smol --watch)
+bun run dev:server            # http://localhost:3000  (run from the repo root: that is where .env lives)
 bun run dev:web               # http://localhost:5173  (Vite proxies /api /auth /webhooks)
 ```
 
@@ -43,6 +43,11 @@ bun run build:web             # then the server serves apps/web/dist
 `bun install` enables the committed git hook (`core.hooksPath = .githooks`). The pre-commit
 hook formats and lints only staged files, re-stages what oxfmt rewrote, and blocks the commit
 on a lint error. `git commit --no-verify` skips it; run `bun run verify` before pushing.
+
+`.env` lives in the **repo root** and Bun only loads it from the process working directory.
+The root scripts run from the root for that reason; if you invoke the server directly, use
+`bun --env-file=.env apps/server/src/index.ts`. Boot prints whether GitHub OAuth, the admin
+allowlist, and the GHCR token are configured, so a silent config miss is visible immediately.
 
 ## Docs
 
