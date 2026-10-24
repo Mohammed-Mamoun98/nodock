@@ -65,6 +65,7 @@ allowlist, and the GHCR token are configured, so a silent config miss is visible
 - `.superdesign/design-system.md` — the design contract (tokens, states, component conventions)
 - `docs/measurements.md` — resource budgets vs measured numbers
 - `docs/DEPLOY.md` — real-domain wiring: DNS, ACME, OAuth App, `.env`, checklist
+- `docs/CI.md` — the push→build→run flow, what nodock writes into your repo, and every credential
 - `docs/research/` — external facts that were verified, with sources
 
 ## Auth
@@ -83,6 +84,9 @@ GitHub **OAuth App**, single-admin, allowlisted by login. nodock asks for `repo 
 | Reconnect    | If the user grants less than `repo workflow`, `/api/me` reports `needsReconnect` and the top bar links back through the OAuth flow  |
 
 Endpoints: `GET /api/me`, `POST /api/auth/logout` (plus the two `/auth/github*` routes).
+
+Building works through your own repository, not an installed app: nodock commits a workflow,
+creates an Actions secret, and registers a push webhook with your token. See `docs/CI.md`.
 
 **Local dev:** `NODOCK_URL` must be the origin the OAuth callback lands on, so use
 `http://localhost:3000` and register `http://localhost:3000/auth/github/callback` in the OAuth
