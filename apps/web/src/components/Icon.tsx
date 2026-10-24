@@ -42,6 +42,18 @@ const paths = {
     </>
   ),
   'arrow-up-right': <path d="M5 11L11 5M6.5 5H11v4.5" />,
+  settings: (
+    <>
+      <circle cx="8" cy="8" r="2" />
+      <path d="M8 1.8v1.4M8 12.8v1.4M2.1 4.9l1.8 1M12.1 10.1l1.8 1M2.1 11.1l1.8-1M12.1 5.9l1.8-1" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="M8 2.2l5.5 2.8L8 7.8 2.5 5z" />
+      <path d="M2.5 8L8 10.8 13.5 8M2.5 11l5.5 2.8L13.5 11" />
+    </>
+  ),
   globe: (
     <>
       <circle cx="8" cy="8" r="5.5" />

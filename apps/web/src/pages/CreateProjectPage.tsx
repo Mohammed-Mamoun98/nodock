@@ -20,7 +20,7 @@ export function CreateProjectPage({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-canvas dot-grid p-6">
+    <main className="flex flex-1 items-center justify-center bg-canvas dot-grid p-6 h-screen">
       <div className="w-[420px] rounded-lg border border-line bg-surface p-8">
         <h1 className="mb-1.5 text-ui-lg font-medium">Create your first project</h1>
         <p className="mb-6 text-ui-sm text-text-dim">

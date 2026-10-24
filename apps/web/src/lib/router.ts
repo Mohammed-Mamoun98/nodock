@@ -5,6 +5,7 @@ export type Route =
   | { name: 'new-service'; projectId: string | null }
   | { name: 'service'; serviceId: string }
   | { name: 'variables'; serviceId: string }
+  | { name: 'project-settings'; projectId: string | null }
   | { name: 'not-found'; path: string };
 
 /**
@@ -19,6 +20,7 @@ export function parseRoute(hash: string): Route {
 
   if (path === '/') return { name: 'dashboard', projectId };
   if (path === '/services/new') return { name: 'new-service', projectId };
+  if (path === '/settings') return { name: 'project-settings', projectId };
 
   const service = /^\/services\/([^/]+)$/.exec(path);
   if (service?.[1]) return { name: 'service', serviceId: service[1] };

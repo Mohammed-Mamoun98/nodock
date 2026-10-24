@@ -20,6 +20,7 @@ import { CreateProjectPage } from './pages/CreateProjectPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NewServicePage } from './pages/NewServicePage';
+import { ProjectSettingsPage } from './pages/ProjectSettingsPage';
 import { ServicePanel } from './pages/ServicePanel';
 
 type Session =
@@ -135,10 +136,6 @@ export default function App() {
                       overview.reload();
                       projects.reload();
                     }}
-                    onDeleted={() => {
-                      projects.reload();
-                      overview.reload();
-                    }}
                   />
                 ) : null}
 
@@ -153,6 +150,17 @@ export default function App() {
                   />
                 ) : null}
               </>
+            ) : null}
+
+            {route.name === 'project-settings' && activeProjectId ? (
+              <ProjectSettingsPage
+                projectId={activeProjectId}
+                overview={overview.data}
+                onChanged={() => {
+                  projects.reload();
+                  overview.reload();
+                }}
+              />
             ) : null}
 
             {route.name === 'new-service' ? (

@@ -228,7 +228,7 @@ export function ServicePanel({ serviceId, onClose }: { serviceId: string; onClos
 
         <div className="flex shrink-0 items-center gap-1">
           <Button variant="primary" onClick={runDeploy} disabled={busy || !link}>
-            {busy ? 'Starting…' : 'Deploy'}
+            {busy ? 'Starting…' : rows.length > 0 ? 'Redeploy' : 'Deploy'}
           </Button>
           <button
             type="button"

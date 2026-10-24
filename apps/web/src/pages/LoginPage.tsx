@@ -1,6 +1,6 @@
 export function LoginPage() {
   return (
-    <main className="flex flex-1 items-center justify-center bg-canvas dot-grid p-6">
+    <main className="flex flex-1 items-center justify-center bg-canvas dot-grid p-6 h-screen">
       <div className="w-[360px] rounded-lg border border-line bg-surface p-8">
         <div className="mb-6 flex items-center gap-2">
           <span className="h-2 w-2 bg-lime" aria-hidden />
