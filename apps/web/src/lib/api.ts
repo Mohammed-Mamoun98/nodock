@@ -196,3 +196,23 @@ export function getService(
 ): Promise<{ service: ServiceRecord; serviceEnvs: ServiceEnvSummary[] }> {
   return request(`/api/services/${serviceId}`);
 }
+
+export interface RepoOption {
+  fullName: string;
+  name: string;
+  owner: string;
+  private: boolean;
+  archived: boolean;
+  defaultBranch: string;
+  pushedAt: string | null;
+}
+
+export function listRepos(): Promise<{ repos: RepoOption[]; truncated: boolean }> {
+  return request('/api/github/repos');
+}
+
+export function listBranches(owner: string, repo: string): Promise<{ branches: string[] }> {
+  return request(
+    `/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
+  );
+}

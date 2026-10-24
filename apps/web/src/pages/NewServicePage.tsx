@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
+import { RepoPicker } from '../components/RepoPicker';
 import { Button, LinkButton } from '../components/ui';
-import { ApiError, createService } from '../lib/api';
+import { ApiError, createService, listBranches, listRepos, type RepoOption } from '../lib/api';
 import { navigate } from '../lib/router';
+import { useAsync } from '../lib/useAsync';
 
 const steps = ['Repository', 'Branch', 'Build', 'Variables', 'CI'] as const;
 
 export function NewServicePage({ projectId }: { projectId: string }) {
+  const repos = useAsync(() => listRepos(), []);
+  const [selected, setSelected] = useState<RepoOption | null>(null);
   const [name, setName] = useState('');
-  const [repo, setRepo] = useState('');
   const [branch, setBranch] = useState('main');
   const [dockerfilePath, setDockerfilePath] = useState('Dockerfile');
   const [contextPath, setContextPath] = useState('.');
@@ -16,27 +19,47 @@ export function NewServicePage({ projectId }: { projectId: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
+  const branches = useAsync(
+    () =>
+      selected
+        ? listBranches(selected.owner, selected.name)
+        : Promise.resolve({ branches: [] as string[] }),
+    [selected?.fullName],
+  );
+
   const outsideContext =
     dockerfilePath.startsWith('../') ||
     (contextPath !== '.' && !dockerfilePath.startsWith(`${contextPath}/`));
 
-  const repoLooksValid = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(repo.trim());
   const canSubmit =
+    Boolean(selected) &&
     name.trim().length > 0 &&
-    repoLooksValid &&
+    branch.trim().length > 0 &&
     !outsideContext &&
     !submitting &&
     projectId.length > 0;
 
+  const reposError = repos.error;
+  const needsReconnect =
+    reposError?.status === 401 ||
+    reposError?.code === 'github_token_rejected' ||
+    reposError?.code === 'github_not_connected';
+
+  function pick(repo: RepoOption) {
+    setSelected(repo);
+    setBranch(repo.defaultBranch);
+    if (!name.trim()) setName(repo.name);
+  }
+
   async function submit() {
-    if (!canSubmit) return;
+    if (!canSubmit || !selected) return;
     setSubmitting(true);
     setError(null);
 
     try {
       const created = await createService(projectId, {
         name: name.trim(),
-        repoFullName: repo.trim(),
+        repoFullName: selected.fullName,
         branch: branch.trim(),
         dockerfilePath,
         contextPath,
@@ -85,8 +108,6 @@ export function NewServicePage({ projectId }: { projectId: string }) {
             </ol>
 
             <div className="flex flex-1 flex-col gap-5 p-8">
-              <h2 className="text-ui-lg font-medium">Repository and build</h2>
-
               <div>
                 <label htmlFor="service-name" className="mb-2 block text-ui-sm">
                   Service name
@@ -101,18 +122,45 @@ export function NewServicePage({ projectId }: { projectId: string }) {
               </div>
 
               <div>
-                <label htmlFor="service-repo" className="mb-2 block text-ui-sm">
-                  Repository
-                </label>
-                <input
-                  id="service-repo"
-                  value={repo}
-                  onChange={(event) => setRepo(event.target.value)}
-                  placeholder="owner/repo"
-                  className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
-                />
-                {repo.length > 0 && !repoLooksValid ? (
-                  <p className="mt-1.5 font-mono text-mono-xs text-amber">Expected owner/repo</p>
+                <span className="mb-2 block text-ui-sm">Repository</span>
+
+                {repos.loading && !repos.data ? (
+                  <div className="rounded-md border border-line px-3 py-6 text-center font-mono text-mono-xs text-text-dim">
+                    loading repositories…
+                  </div>
+                ) : null}
+
+                {reposError ? (
+                  <div className="flex flex-col gap-2 rounded-md border border-red/30 bg-red/5 p-3">
+                    <p className="font-mono text-mono-xs text-red">
+                      {reposError.code} · {reposError.message}
+                    </p>
+                    {needsReconnect ? (
+                      <a
+                        href="/auth/github"
+                        className="self-start rounded border border-lime px-2 py-1 text-ui-sm text-lime hover:bg-lime/10"
+                      >
+                        Reconnect GitHub
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={repos.reload}
+                        className="self-start rounded border border-line px-2 py-1 text-ui-sm hover:bg-surface-2"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+
+                {repos.data ? (
+                  <RepoPicker
+                    repos={repos.data.repos}
+                    selected={selected?.fullName ?? null}
+                    onSelect={pick}
+                    truncated={repos.data.truncated}
+                  />
                 ) : null}
               </div>
 
@@ -120,12 +168,29 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                 <label htmlFor="service-branch" className="mb-2 block text-ui-sm">
                   Branch
                 </label>
-                <input
-                  id="service-branch"
-                  value={branch}
-                  onChange={(event) => setBranch(event.target.value)}
-                  className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
-                />
+                {branches.data && branches.data.branches.length > 0 ? (
+                  <select
+                    id="service-branch"
+                    value={branch}
+                    onChange={(event) => setBranch(event.target.value)}
+                    className="h-8 w-full rounded-md border border-line bg-surface-2 px-2 font-mono text-ui-sm"
+                  >
+                    {branches.data.branches.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="service-branch"
+                    value={branch}
+                    onChange={(event) => setBranch(event.target.value)}
+                    disabled={!selected}
+                    placeholder={selected ? branch : 'pick a repository first'}
+                    className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm disabled:opacity-50"
+                  />
+                )}
               </div>
 
               <div>

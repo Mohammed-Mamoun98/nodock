@@ -5,6 +5,7 @@ import type { Config } from './config';
 import type { Db } from './db/client';
 import { registerCaddyRoutes } from './caddy/routes';
 import { apiError } from './http';
+import { registerGitHubRoutes } from './routes/github';
 import { registerProjectRoutes } from './routes/projects';
 import { registerServiceRoutes } from './routes/services';
 import { registerVariableRoutes } from './routes/variables';
@@ -71,6 +72,12 @@ export function createApp(deps: AppDeps) {
   });
 
   // Everything below sits behind the guard registered above.
+  registerGitHubRoutes(app, {
+    config,
+    db,
+    github: deps.github ?? createGitHubClient(),
+    now: deps.now,
+  });
   registerProjectRoutes(app, { config, db });
   registerServiceRoutes(app, { config, db });
   registerVariableRoutes(app, { config, db });

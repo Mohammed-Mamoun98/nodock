@@ -30,6 +30,8 @@ function fakeGitHub(overrides: Partial<GitHubClient> = {}): GitHubClient {
       `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&state=${state}`,
     exchangeCode: async () => ({ accessToken: 'gho_secret_token', scopes: ['repo', 'workflow'] }),
     getUser: async () => ({ id: 42, login: 'mohammed', avatarUrl: null }),
+    listRepos: async () => ({ repos: [], hasMore: false }),
+    listBranches: async () => [],
     ...overrides,
   };
 }

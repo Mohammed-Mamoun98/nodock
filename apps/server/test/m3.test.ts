@@ -22,6 +22,8 @@ const github: GitHubClient = {
   authorizeUrl: () => 'https://github.com/login/oauth/authorize',
   exchangeCode: async () => ({ accessToken: 'gho_test', scopes: ['repo', 'workflow'] }),
   getUser: async () => ({ id: 1, login: 'mohammed', avatarUrl: null }),
+  listRepos: async () => ({ repos: [], hasMore: false }),
+  listBranches: async () => [],
 };
 
 async function signedIn() {

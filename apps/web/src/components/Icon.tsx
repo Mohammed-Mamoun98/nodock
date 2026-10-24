@@ -42,6 +42,18 @@ const paths = {
     </>
   ),
   'arrow-up-right': <path d="M5 11L11 5M6.5 5H11v4.5" />,
+  search: (
+    <>
+      <circle cx="7" cy="7" r="4" />
+      <path d="M10 10l3.5 3.5" />
+    </>
+  ),
+  lock: (
+    <>
+      <rect x="3.5" y="7" width="9" height="6" rx="1.5" />
+      <path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" />
+    </>
+  ),
   x: <path d="M4 4l8 8M12 4l-8 8" />,
 } as const;
 
