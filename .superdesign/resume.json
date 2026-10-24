@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "dashboard": {
+      "targetKind": "new-ui",
+      "projectId": "1a042fc7-7b76-40c2-a50d-6370cd438bef",
+      "activeDraftId": "be90196f-5c97-470b-ba82-5d6a1343360d",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "a36e582eb8048808da8dc95870119029827f6f6534b875a0bbf68934bed0a891",
+        ".superdesign/init/theme.md": "bd702029e9925fc08d1c74cc37221871ace1712649e37e20f95936f74b11cf8a"
+      },
+      "drafts": {
+        "be90196f-5c97-470b-ba82-5d6a1343360d": {
+          "title": "nodock Dashboard Improvements",
+          "visualDirection": "dark operations console: near-black canvas, hairline borders, lime accent, Inter + JetBrains Mono, service-card grid over a dot grid with an ingress footer",
+          "currentVersion": 4
+        }
+      },
+      "updatedAt": "2026-10-24T19:27:43Z"
+    },
+    "flow:service-detail": {
+      "targetKind": "new-ui",
+      "projectId": "1a042fc7-7b76-40c2-a50d-6370cd438bef",
+      "activeDraftId": "6412faa7-d119-4ee1-bdd8-0f40a2e4647a",
+      "designSystemPath": ".superdesign/design-system.md",
+      "sourceTarget": "dashboard",
+      "sourceDraftId": "be90196f-5c97-470b-ba82-5d6a1343360d",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "a36e582eb8048808da8dc95870119029827f6f6534b875a0bbf68934bed0a891",
+        ".superdesign/init/theme.md": "bd702029e9925fc08d1c74cc37221871ace1712649e37e20f95936f74b11cf8a"
+      },
+      "drafts": {
+        "6412faa7-d119-4ee1-bdd8-0f40a2e4647a": {
+          "title": "Service — milo-api",
+          "visualDirection": "full-page service detail: breadcrumb, service header with host + actions, Deployments/Logs/Variables/Settings tabs, tabular deploy table with head marker and rollback, pinned 180px log panel",
+          "parentDraftId": "be90196f-5c97-470b-ba82-5d6a1343360d",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-10-24T19:35:00Z"
+    },
+    "flow:new-service": {
+      "targetKind": "new-ui",
+      "projectId": "1a042fc7-7b76-40c2-a50d-6370cd438bef",
+      "activeDraftId": "e43b3c58-96c0-4753-9519-6a5df6ec00ea",
+      "designSystemPath": ".superdesign/design-system.md",
+      "sourceTarget": "dashboard",
+      "sourceDraftId": "be90196f-5c97-470b-ba82-5d6a1343360d",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "a36e582eb8048808da8dc95870119029827f6f6534b875a0bbf68934bed0a891",
+        ".superdesign/init/theme.md": "bd702029e9925fc08d1c74cc37221871ace1712649e37e20f95936f74b11cf8a"
+      },
+      "drafts": {
+        "e43b3c58-96c0-4753-9519-6a5df6ec00ea": {
+          "title": "New service — wizard",
+          "visualDirection": "5-step wizard card on the dot grid: vertical stepper (Repository, Branch, Build, Variables, CI) with step 3 of 5 rendered, mono inputs with inline validation warning, footer with Back / step counter / lime Continue",
+          "parentDraftId": "be90196f-5c97-470b-ba82-5d6a1343360d",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-10-24T19:35:00Z"
+    },
+    "flow:variables": {
+      "targetKind": "new-ui",
+      "projectId": "1a042fc7-7b76-40c2-a50d-6370cd438bef",
+      "activeDraftId": "03ad7eef-ab28-4244-8fa9-99a6e726b2c8",
+      "designSystemPath": ".superdesign/design-system.md",
+      "sourceTarget": "dashboard",
+      "sourceDraftId": "be90196f-5c97-470b-ba82-5d6a1343360d",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/init/theme.md"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "a36e582eb8048808da8dc95870119029827f6f6534b875a0bbf68934bed0a891",
+        ".superdesign/init/theme.md": "bd702029e9925fc08d1c74cc37221871ace1712649e37e20f95936f74b11cf8a"
+      },
+      "drafts": {
+        "03ad7eef-ab28-4244-8fa9-99a6e726b2c8": {
+          "title": "Variables — milo-api",
+          "visualDirection": "per-environment variable editor: amber redeploy notice, KEY/VALUE/ACTIONS table with masked values and per-row reveal, side cards for encryption and staging drift, sticky dirty-state footer",
+          "parentDraftId": "be90196f-5c97-470b-ba82-5d6a1343360d",
+          "currentVersion": 1
+        }
+      },
+      "updatedAt": "2026-10-24T19:35:00Z"
+    }
+  }
+}

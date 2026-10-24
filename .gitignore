@@ -8,4 +8,13 @@ dist/
 .env.local
 .DS_Store
 apps/server/drizzle/meta/_journal.json.bak
+
+# Superdesign working state: keep scratch HTML out of git, but version the
+# durable artifacts a human or a later session needs (design contract, repo
+# context, resume state). The CLI may rewrite `.superdesign/*` on its own runs;
+# restore these negations if it does.
 .superdesign/*
+!.superdesign/design-system.md
+!.superdesign/resume.json
+!.superdesign/init/
+!.superdesign/init/**
