@@ -11,6 +11,8 @@ FROM oven/bun:1-alpine AS web-build
 WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY package.json bun.lock ./
+# apps/web/tsconfig.json extends this; rolldown fails hard without it.
+COPY tsconfig.base.json ./
 COPY apps/web/package.json apps/web/
 COPY apps/web apps/web
 RUN bun install --frozen-lockfile --ignore-scripts && bun run --cwd apps/web build
@@ -20,6 +22,8 @@ WORKDIR /app
 ENV NODE_ENV=production \
     DATA_DIR=/data
 COPY package.json ./
+# The server tsconfig extends this too.
+COPY tsconfig.base.json ./
 COPY --from=deps /app/node_modules node_modules
 COPY apps/server apps/server
 COPY --from=web-build /app/apps/web/dist apps/web/dist
