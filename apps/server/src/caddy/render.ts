@@ -10,6 +10,12 @@ export interface CaddyRoute {
   host: string;
   /** `container:port` on the shared docker network. */
   upstream: string;
+  /**
+   * The previous container, kept during the switch window only. Caddy retries
+   * against it if the new upstream refuses connections, which covers the case
+   * where a container is "up" but crashing on first real request.
+   */
+  previous?: string;
 }
 
 export interface CaddyConfigInput {
@@ -68,6 +74,7 @@ export function renderCaddyfile(input: CaddyConfigInput): string {
     .map((route) => ({
       host: assertSafeHost(route.host),
       upstream: assertSafeUpstream(route.upstream),
+      previous: route.previous ? assertSafeUpstream(route.previous) : undefined,
     }))
     .filter((route) => {
       if (seen.has(route.host)) return false;
@@ -77,6 +84,17 @@ export function renderCaddyfile(input: CaddyConfigInput): string {
     .toSorted((a, b) => a.host.localeCompare(b.host));
 
   for (const route of routes) {
+    const proxy = route.previous
+      ? [
+          `\treverse_proxy ${route.upstream} ${route.previous} {`,
+          // Only for the switch window: retry the old container, and remember a
+          // failing upstream briefly instead of hammering it.
+          '\t\tlb_try_duration 5s',
+          '\t\tfail_duration 30s',
+          '\t}',
+        ]
+      : [`\treverse_proxy ${route.upstream}`];
+
     blocks.push(
       [
         route.host + ' {',
@@ -84,7 +102,7 @@ export function renderCaddyfile(input: CaddyConfigInput): string {
         '\t\ton_demand',
         '\t}',
         '\tencode zstd gzip',
-        `\treverse_proxy ${route.upstream}`,
+        ...proxy,
         '}',
       ].join('\n'),
     );

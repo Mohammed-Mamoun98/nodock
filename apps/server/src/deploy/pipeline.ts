@@ -1,0 +1,240 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { and, desc, eq } from 'drizzle-orm';
+import { decrypt, deriveKey } from '../auth/crypto';
+import type { CaddyAdmin } from '../caddy/admin';
+import { buildRoutes, renderCurrentConfig } from '../caddy/service';
+import { renderCaddyfile } from '../caddy/render';
+import type { Config } from '../config';
+import type { Db } from '../db/client';
+import { deployments, serviceEnvs, services, variables } from '../db/schema';
+import type { DockerAdapter } from '../docker/adapter';
+import { containerName } from '../docker/adapter';
+
+export type DeployOutcome = 'live' | 'failed' | 'skipped';
+
+export interface DeployDeps {
+  config: Config;
+  db: Db;
+  docker: DockerAdapter;
+  admin: CaddyAdmin | null;
+  /** Injectable for tests; resolves once the container answers (or gives up). */
+  health?: (url: string) => Promise<boolean>;
+  now?: () => number;
+  log?: (deploymentId: string, line: string) => void;
+}
+
+interface Env {
+  [key: string]: string;
+}
+
+/**
+ * The state machine from the plan:
+ *   queued → pulling → starting → healthchecking → switching → live
+ * Any failure stops the old container untouched and marks the deployment failed.
+ */
+export async function runDeployment(
+  deps: DeployDeps,
+  deploymentId: string,
+): Promise<DeployOutcome> {
+  const { config, db, docker, admin } = deps;
+  const now = deps.now ?? (() => Date.now());
+  const log = deps.log ?? (() => {});
+
+  const deployment = db.select().from(deployments).where(eq(deployments.id, deploymentId)).get();
+  if (!deployment) return 'skipped';
+
+  // Supersede anything still waiting for this service env: a newer build wins.
+  db.update(deployments)
+    .set({
+      status: 'cancelled',
+      error: 'superseded by a newer deployment',
+      finishedAt: new Date(now()),
+    })
+    .where(
+      and(eq(deployments.serviceEnvId, deployment.serviceEnvId), eq(deployments.status, 'queued')),
+    )
+    .run();
+
+  const serviceEnv = db
+    .select()
+    .from(serviceEnvs)
+    .where(eq(serviceEnvs.id, deployment.serviceEnvId))
+    .get();
+  const service = serviceEnv
+    ? db.select().from(services).where(eq(services.id, serviceEnv.serviceId)).get()
+    : null;
+  const environment = serviceEnv ? { id: serviceEnv.environmentId } : null;
+
+  if (!serviceEnv || !service || !environment) {
+    fail(db, deploymentId, 'Service env disappeared before deploy', now());
+    return 'failed';
+  }
+
+  const port = service.containerPort ?? 3000;
+  const name = containerName(service.slug, 'prod', deployment.id);
+
+  const previous = db
+    .select()
+    .from(deployments)
+    .where(and(eq(deployments.serviceEnvId, serviceEnv.id), eq(deployments.status, 'live')))
+    .orderBy(desc(deployments.createdAt))
+    .get();
+
+  const setStatus = (status: typeof deployment.status, patch: Partial<typeof deployment> = {}) => {
+    db.update(deployments)
+      .set({ status, ...patch })
+      .where(eq(deployments.id, deploymentId))
+      .run();
+  };
+
+  try {
+    setStatus('pulling', { startedAt: new Date(now()) });
+    log(deploymentId, `pulling ${deployment.imageRef}`);
+
+    const pulled = await docker.pull(deployment.imageRef, (line) => log(deploymentId, line));
+    if (!pulled.ok) {
+      fail(db, deploymentId, pulled.error ?? 'pull failed', now());
+      return 'failed';
+    }
+
+    setStatus('starting', { containerName: name });
+    const envFile = writeEnvFile(config.paths.envDir, deployment.id, envFor(deps, serviceEnv.id));
+    log(deploymentId, `starting ${name} on port ${port}`);
+
+    await docker.run({
+      name,
+      image: deployment.imageRef,
+      envFile,
+      network: config.dockerNetwork,
+      memoryMb: service.memoryLimitMb ?? 512,
+      labels: {
+        'nodock.managed': 'true',
+        'nodock.service': service.id,
+        'nodock.service_env': serviceEnv.id,
+        'nodock.deployment': deployment.id,
+      },
+    });
+    rmSync(envFile, { force: true });
+
+    setStatus('healthchecking');
+    const healthy = await (deps.health ?? defaultHealth)(
+      `http://${name}:${port}${serviceEnv.healthPath ?? '/'}`,
+    );
+    if (!healthy) {
+      await docker.remove(name).catch(() => {});
+      fail(db, deploymentId, 'health check failed', now());
+      return 'failed';
+    }
+
+    setStatus('switching');
+    const host = serviceEnv.customDomain ?? serviceEnv.generatedHost;
+    const switched = await switchRoute(deps, host, `${name}:${port}`);
+    if (!switched) {
+      await docker.remove(name).catch(() => {});
+      fail(
+        db,
+        deploymentId,
+        'Caddy rejected the route switch; previous container left serving',
+        now(),
+      );
+      return 'failed';
+    }
+
+    setStatus('live', { finishedAt: new Date(now()) });
+    log(deploymentId, 'live');
+
+    // Draining, not killing: SIGTERM then a 15s grace so in-flight requests finish.
+    if (previous?.containerName && previous.containerName !== name) {
+      await docker.stop(previous.containerName, 15).catch(() => {});
+      await docker.remove(previous.containerName).catch(() => {});
+    }
+
+    if (admin) await reconcileClean(deps);
+    return 'live';
+  } catch (error) {
+    await docker.remove(name).catch(() => {});
+    fail(db, deploymentId, error instanceof Error ? error.message : String(error), now());
+    return 'failed';
+  }
+}
+
+function fail(db: Db, deploymentId: string, message: string, at: number) {
+  db.update(deployments)
+    .set({ status: 'failed', error: message.slice(0, 500), finishedAt: new Date(at) })
+    .where(eq(deployments.id, deploymentId))
+    .run();
+}
+
+function envFor(deps: DeployDeps, serviceEnvId: string): Env {
+  const key = deriveKey(deps.config.secret);
+  const rows = deps.db
+    .select()
+    .from(variables)
+    .where(eq(variables.serviceEnvId, serviceEnvId))
+    .all();
+
+  const env: Env = {};
+  for (const row of rows) {
+    try {
+      env[row.key] = decrypt(row.valueEnc, key);
+    } catch {
+      // A value we cannot decrypt is a broken secret, not a reason to deploy blind.
+      throw new Error(`Cannot decrypt variable ${row.key} — NODOCK_SECRET changed?`);
+    }
+  }
+  return env;
+}
+
+function writeEnvFile(envDir: string, deploymentId: string, env: Env): string {
+  mkdirSync(envDir, { recursive: true, mode: 0o700 });
+  const path = join(envDir, `${deploymentId}.env`);
+  const body = Object.entries(env)
+    .map(([key, value]) => `${key}=${value.replace(/\n/g, '\\n')}`)
+    .join('\n');
+  writeFileSync(path, `${body}\n`, { mode: 0o600 });
+  return path;
+}
+
+async function defaultHealth(url: string, timeoutMs = 60_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() < deadline) {
+    try {
+      // Sequential by design: poll, wait, poll again.
+      // eslint-disable-next-line no-await-in-loop
+      const response = await fetch(url, { signal: AbortSignal.timeout(3000) });
+      if (response.ok) return true;
+    } catch {
+      // not up yet
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  return false;
+}
+
+async function switchRoute(deps: DeployDeps, host: string, upstream: string): Promise<boolean> {
+  if (!deps.admin) return true; // host runs without Caddy (dev); nothing to switch
+
+  const config = renderCaddyfile({
+    dashboardHost: new URL(deps.config.url).host,
+    dashboardUpstream: 'nodock:3000',
+    askUrl: deps.config.caddy.askUrl,
+    routes: buildRoutes(deps.db, { host, upstream }),
+  });
+
+  try {
+    await deps.admin.load(config);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function reconcileClean(deps: DeployDeps): Promise<void> {
+  if (!deps.admin) return;
+  const config = renderCurrentConfig({ config: deps.config, db: deps.db });
+  await deps.admin.load(config).catch(() => {});
+}

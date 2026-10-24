@@ -33,7 +33,7 @@ export function allowedHosts(db: Db, config: Config): Set<string> {
  * A host with no live deployment still gets a certificate (it is in `allowedHosts`)
  * but no route, so it 404s until the first successful deploy.
  */
-export function buildRoutes(db: Db): CaddyRoute[] {
+export function buildRoutes(db: Db, pending?: { host: string; upstream: string }): CaddyRoute[] {
   const envRows = db
     .select({
       id: serviceEnvs.id,
@@ -74,13 +74,23 @@ export function buildRoutes(db: Db): CaddyRoute[] {
   const routes: CaddyRoute[] = [];
   for (const row of envRows) {
     const live = newestLive.get(row.id);
-    if (!live?.containerName) continue;
-
+    const host = row.customDomain ?? row.generatedHost;
     const port = portByServiceId.get(row.serviceId) ?? 3000;
-    routes.push({
-      host: row.customDomain ?? row.generatedHost,
-      upstream: `${live.containerName}:${port}`,
-    });
+
+    // During a switch the pending container becomes primary and the live one is
+    // kept as failover, so a container that is healthy at the HTTP level but
+    // crashes on the first real request does not take the host down.
+    if (pending && pending.host === host) {
+      routes.push({
+        host,
+        upstream: pending.upstream,
+        ...(live?.containerName ? { previous: `${live.containerName}:${port}` } : {}),
+      });
+      continue;
+    }
+
+    if (!live?.containerName) continue;
+    routes.push({ host, upstream: `${live.containerName}:${port}` });
   }
 
   return routes;

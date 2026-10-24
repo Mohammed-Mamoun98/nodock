@@ -14,6 +14,9 @@ import {
 import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { deployments, repoHooks, serviceEnvs, services, users } from '../db/schema';
+import type { CaddyAdmin } from '../caddy/admin';
+import { runDeployment } from '../deploy/pipeline';
+import type { DockerAdapter } from '../docker/adapter';
 import { apiError, validationError } from '../http';
 import { findServiceEnv } from './services';
 import { z } from 'zod';
@@ -22,6 +25,9 @@ export interface CiDeps {
   config: Config;
   db: Db;
   github: GitHubClient;
+  /** Present in a real install; tests inject fakes. */
+  docker?: DockerAdapter;
+  admin?: CaddyAdmin;
   now?: () => number;
 }
 
@@ -460,6 +466,19 @@ export function registerCiCallbacks(app: Hono, deps: CiDeps): void {
       const { status, body } = apiError('not_found', 'No such build', 404);
       return c.json(body, status);
     }
+
+    // A build that passed CI now gets pulled, run, health-checked and routed.
+    // Deliberately not awaited: GitHub is waiting on this response, and a slow
+    // pull must not turn into a failed callback.
+    if (!failed && deps.docker) {
+      void runDeployment(
+        { config, db, docker: deps.docker, admin: deps.admin ?? null },
+        auth.payload.buildId,
+      ).catch((error: unknown) => {
+        console.error('[nodock] deploy pipeline failed', error);
+      });
+    }
+
     return c.json({ ok: true });
   });
 
