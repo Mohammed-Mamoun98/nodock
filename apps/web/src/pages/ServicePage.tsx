@@ -10,7 +10,7 @@ import {
   listDeployments,
   type CiState,
 } from '../lib/api';
-import { deploymentStatusMeta, stateMeta } from '../lib/status';
+import { deploymentStatusMeta, isDeploymentInFlight, stateMeta } from '../lib/status';
 import { useAsync } from '../lib/useAsync';
 import { deriveState, relativeAge } from '../lib/view';
 
@@ -32,7 +32,11 @@ export function ServicePage({ serviceId }: { serviceId: string }) {
   const [ciConflict, setCiConflict] = useState<{ current: string; preview: string } | null>(null);
 
   const service = useAsync(() => getService(serviceId), [serviceId]);
-  const deployments = useAsync(() => listDeployments(serviceId), [serviceId]);
+  const deployments = useAsync(() => listDeployments(serviceId), [serviceId], {
+    pollMs: 3000,
+    // Poll only while the newest deployment can still move on its own.
+    shouldPoll: (page) => isDeploymentInFlight(page?.deployments[0]?.status ?? ''),
+  });
 
   const repoFullName = service.data?.service.repoFullName ?? '';
   const [owner, repo] = repoFullName.split('/');

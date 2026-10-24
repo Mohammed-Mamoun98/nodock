@@ -14,6 +14,7 @@ import {
   type ApiError,
 } from './lib/api';
 import { useRoute } from './lib/router';
+import { isDeploymentInFlight } from './lib/status';
 import { useAsync } from './lib/useAsync';
 import { CreateProjectPage } from './pages/CreateProjectPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -71,6 +72,16 @@ export default function App() {
   const overview = useAsync<ProjectOverview | null>(
     () => (activeProjectId ? getProjectOverview(activeProjectId) : Promise.resolve(null)),
     [activeProjectId],
+    {
+      pollMs: 4000,
+      // Cards show the newest deployment state; refresh only while one is moving.
+      shouldPoll: (page) =>
+        page?.services.some((service) =>
+          service.serviceEnvs.some((env) =>
+            env.latestDeployment ? isDeploymentInFlight(env.latestDeployment.status) : false,
+          ),
+        ) ?? false,
+    },
   );
 
   if (session.status === 'loading') {

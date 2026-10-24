@@ -1,5 +1,12 @@
 export type Tone = 'lime' | 'amber' | 'red' | 'steel';
 
+const IN_FLIGHT = new Set(['queued', 'pulling', 'starting', 'healthchecking', 'switching']);
+
+/** True while a deployment can still change without operator action. */
+export function isDeploymentInFlight(status: string): boolean {
+  return IN_FLIGHT.has(status);
+}
+
 import type { ServiceState } from '../lib/view';
 
 export const stateMeta: Record<ServiceState, { label: string; tone: Tone; inFlight: boolean }> = {
