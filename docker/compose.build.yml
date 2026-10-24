@@ -1,0 +1,8 @@
+# Override for building the image from this checkout instead of pulling it:
+#   docker compose -f compose.yml -f compose.build.yml up -d --build
+services:
+  nodock:
+    image: nodock:dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile

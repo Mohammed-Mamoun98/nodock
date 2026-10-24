@@ -21,6 +21,16 @@ docker        Dockerfile, compose (prod + dev), Caddy bootstrap config
 docs          measurements, research notes
 ```
 
+## Install
+
+On a VPS with Docker (no repo clone, no build on the box):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mohammed-Mamoun98/nodock/main/scripts/install.sh | sudo bash
+```
+
+See `docs/DEPLOY.md` for DNS, the OAuth App, certificates, and the upgrade path.
+
 ## Dev quickstart
 
 ```bash

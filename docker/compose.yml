@@ -1,3 +1,5 @@
+# Contributor compose: pulls the published image, like an install, but from this checkout.
+# To build from source instead, add -f compose.build.yml.
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -12,12 +14,10 @@ services:
     restart: unless-stopped
 
   nodock:
-    image: ghcr.io/OWNER/nodock:latest
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/mohammed-mamoun98/nodock:${NODOCK_VERSION:-latest}
     env_file: ../.env
     environment:
+      DATA_DIR: /data
       DOCKER_CONFIG: /data/docker
     volumes:
       - nodock_data:/data

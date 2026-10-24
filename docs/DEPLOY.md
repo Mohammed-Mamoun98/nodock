@@ -2,6 +2,28 @@
 
 Written for `tenorlabs.dev`. Change the two hostnames if you prefer different ones.
 
+## Install: pull an image, do not clone the repo
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mohammed-Mamoun98/nodock/main/scripts/install.sh | sudo bash
+```
+
+The installer creates `/opt/nodock/` holding exactly three files — `compose.yml`, `Caddyfile`,
+`.env` — adds 2 GB swap if the box has none, generates `NODOCK_SECRET`, pulls the image, and
+stops with a list of what still needs filling in before it will start. **The source tree is not
+involved.** Contributions use `docker/compose.build.yml` to build locally instead.
+
+`NODOCK_VERSION` in `.env` pins the image tag (`0.1.0`, not `latest`). Migrations run at boot,
+so upgrades are deliberate:
+
+```bash
+sed -i 's/^NODOCK_VERSION=.*/NODOCK_VERSION=0.2.0/' /opt/nodock/.env
+docker compose -f /opt/nodock/compose.yml pull && docker compose -f /opt/nodock/compose.yml up -d
+```
+
+Roll back by pinning the previous tag — the data volume is untouched by a downgrade unless the
+newer release migrated the schema forward.
+
 | Role     | Host                   | Serves                                                                                              |
 | -------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
 | Panel    | `panel.tenorlabs.dev`  | the nodock UI + API (this is `NODOCK_URL`)                                                          |

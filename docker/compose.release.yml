@@ -1,0 +1,38 @@
+# Self-contained install: compose.yml, Caddyfile and .env live side by side in
+# /opt/nodock. Nothing here references the source tree, because a user installing
+# nodock does not have one.
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [nodock]
+    restart: unless-stopped
+
+  nodock:
+    image: ghcr.io/mohammed-mamoun98/nodock:${NODOCK_VERSION:-latest}
+    env_file: ./.env
+    environment:
+      DATA_DIR: /data
+      DOCKER_CONFIG: /data/docker
+    volumes:
+      - nodock_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [nodock]
+    depends_on: [caddy]
+    restart: unless-stopped
+    mem_limit: 300m
+
+networks:
+  nodock:
+    name: nodock
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  nodock_data: {}
