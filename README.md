@@ -40,6 +40,10 @@ bun run verify                # fmt:check + lint + typecheck + tests + render sm
 bun run build:web             # then the server serves apps/web/dist
 ```
 
+`bun install` enables the committed git hook (`core.hooksPath = .githooks`). The pre-commit
+hook formats and lints only staged files, re-stages what oxfmt rewrote, and blocks the commit
+on a lint error. `git commit --no-verify` skips it; run `bun run verify` before pushing.
+
 ## Docs
 
 - `i-wanna-build-sth-compiled-clock.md` — the v1 plan (scope, architecture, budgets, milestones)
