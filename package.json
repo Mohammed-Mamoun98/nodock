@@ -6,8 +6,10 @@
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
     "build:web": "bun run --cwd apps/web build",
+    "smoke:web": "bun run build:web && bun scripts/smoke-web.ts",
     "test": "bun test",
-    "typecheck": "tsc -b --pretty"
+    "typecheck": "tsc -b --pretty",
+    "verify": "bunx tsc -p apps/server && bunx tsc -p apps/web && bun test --cwd apps/server && bun run smoke:web"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

@@ -26,20 +26,34 @@ Notes:
 ## M1.5 — dashboard UI ported from the Superdesign canvas (2026-10-24, macOS arm64, Bun 1.4.2, Vite 8.3.5)
 
 Drafts ported: dashboard grid (`be90196f` v4), service detail, new-service wizard, variables editor.
-No new runtime dependencies: icons are inline SVG, routing is a 40-line hash router.
+No icon or routing dependencies: icons are inline SVG, routing is a 40-line hash router.
 
-| Metric | Budget | Measured | Verdict |
-|---|---|---|---|
-| initial JS (web) | ≤120 KB gz | **76.5 KB gz** (30 modules) | pass |
-| CSS (web) | — | **4.9 KB gz** | pass |
-| control-plane RSS while serving the SPA | ≤80 MB | **44 MB** (`/metrics-lite`) | pass |
-| static asset serving | — | `index.html` no-store, hashed assets 200 | — |
+| Metric | Budget | React | Preact alias | Verdict |
+|---|---|---|---|---|
+| initial JS (raw) | — | 253.0 KB | **47.8 KB** | 5.3× smaller |
+| initial JS (gz) | ≤120 KB | 76.5 KB | **15.0 KB** | pass, 8× headroom |
+| CSS (gz) | — | 4.9 KB | 4.9 KB | pass |
+| control-plane RSS serving the SPA | ≤80 MB | 44 MB | 44 MB | pass |
+
+Alias: `@preact/preset-vite` maps `react`, `react-dom`, and `react/jsx-runtime` to
+`preact/compat`, so source keeps React idioms and the browser gets Preact. `StrictMode` was
+dropped (no double-invoke semantics to preserve). React and react-dom are no longer runtime
+dependencies; `@types/react` stays for typechecking only, which is why **types alone cannot
+prove the alias works** — hence the render gate below.
+
+## Render gate (catches what types and builds cannot)
+
+`bun run smoke:web` builds the app, mounts the production bundle in a happy-dom window, and
+asserts the rendered markup: product mark, project switcher, a service card, the failure copy
+(`add GHCR_TOKEN`), the ingress node, the filter row, and the state vocabulary.
+
+Last run: 8/8 checks, 14.7 KB of DOM from `index-DfaauvDr.js`.
 
 Notes:
-- 69 KB → 76.5 KB for four full screens, which is the shape we wanted: the design system is
-  doing the work, not a component library.
-- No visual QA was performed in this session (no browser). Layout/interaction review still
-  needs a human looking at `bun run dev:web` or the canvas.
+- No visual QA in this session (no browser). Layout review still needs a human on
+  `bun run dev:web` or the canvas.
+- Inter / JetBrains Mono are referenced with system fallbacks (no webfont request), so type
+  is close to the canvas but not identical without those fonts installed.
 
 ## M1 — verification
 

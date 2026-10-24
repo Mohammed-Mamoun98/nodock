@@ -1,11 +1,13 @@
-import react from '@vitejs/plugin-react';
+import preact from '@preact/preset-vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 const API = 'http://localhost:3000';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  // The Preact preset aliases react / react-dom / react/jsx-runtime to
+  // preact/compat, so the source keeps React idioms and the bundle stays small.
+  plugins: [preact(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {
@@ -19,7 +21,6 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    // Keep the initial payload honest: the budget lives in the plan (≤120 KB gz).
     reportCompressedSize: true,
   },
 });
