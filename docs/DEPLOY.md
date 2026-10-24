@@ -102,7 +102,7 @@ Before pointing a real repository at the install, run the checks that the first 
 depends on:
 
 ```bash
-docker compose -f /opt/nodock/compose.yml exec nodock bun apps/server/src/doctor.ts
+docker compose -f /opt/nodock/compose.yml exec nodock bun scripts/doctor.ts
 ```
 
 It verifies, in the order things actually break: GitHub OAuth credentials, the admin

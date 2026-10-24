@@ -16,12 +16,16 @@ RUN bun run --cwd apps/web build
 
 FROM oven/bun:1-alpine AS runtime
 WORKDIR /app
+# The deploy pipeline shells out to `docker` (pull/run/inspect/stop/rm) through the
+# mounted socket, and the image starts with no CLI at all.
+RUN apk add --no-cache docker-cli
 ENV NODE_ENV=production \
     DATA_DIR=/data
 COPY package.json bun.lock tsconfig.base.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY apps/server apps/server
+COPY scripts scripts
 COPY --from=web-build /app/apps/web/dist apps/web/dist
 RUN bun install --frozen-lockfile --production --ignore-scripts
 EXPOSE 3000

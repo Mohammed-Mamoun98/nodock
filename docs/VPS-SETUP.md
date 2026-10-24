@@ -117,7 +117,7 @@ curl -sS https://panel.tenorlabs.dev/healthz
 
 # preflight
 docker compose -f docker/compose.yml exec nodock \
-  bun apps/server/src/doctor.ts
+  bun scripts/doctor.ts
 ```
 
 `doctor` should be all `ok`. A `warn` on DNS while propagation settles is fine; a `FAIL` is not —

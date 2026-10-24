@@ -5,7 +5,7 @@
  *   bun run doctor
  *
  * Inside the container:
- *   docker compose exec nodock bun apps/server/src/doctor.ts
+ *   docker compose exec nodock bun scripts/doctor.ts
  */
 import { createCaddyAdmin } from '../apps/server/src/caddy/admin';
 import { loadConfig } from '../apps/server/src/config';
