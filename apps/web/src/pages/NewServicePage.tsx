@@ -2,7 +2,18 @@ import { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { RepoPicker } from '../components/RepoPicker';
 import { Button, LinkButton } from '../components/ui';
-import { ApiError, createService, listBranches, listRepos, type RepoOption } from '../lib/api';
+import {
+  ApiError,
+  createService,
+  enableCi,
+  getCiStatus,
+  inspectRepo,
+  listBranches,
+  listRepos,
+  type CiState,
+  type RepoInspection,
+  type RepoOption,
+} from '../lib/api';
 import { navigate } from '../lib/router';
 import { useAsync } from '../lib/useAsync';
 
@@ -13,42 +24,64 @@ export function NewServicePage({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<RepoOption | null>(null);
   const [name, setName] = useState('');
   const [branch, setBranch] = useState('main');
-  const [dockerfilePath, setDockerfilePath] = useState('Dockerfile');
-  const [contextPath, setContextPath] = useState('.');
-  const [containerPort, setContainerPort] = useState('3000');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
 
+  // Values the operator typed win over anything we detected.
+  const [dockerfileOverride, setDockerfileOverride] = useState<string | null>(null);
+  const [contextOverride, setContextOverride] = useState<string | null>(null);
+  const [portOverride, setPortOverride] = useState<string | null>(null);
+  /** null = follow detection: on while CI is missing, off once it is enabled. */
+  const [ciChoice, setCiChoice] = useState<boolean | null>(null);
+
+  const owner = selected?.owner ?? '';
+  const repo = selected?.name ?? '';
+
   const branches = useAsync(
-    () =>
-      selected
-        ? listBranches(selected.owner, selected.name)
-        : Promise.resolve({ branches: [] as string[] }),
-    [selected?.fullName],
+    () => (selected ? listBranches(owner, repo) : Promise.resolve({ branches: [] as string[] })),
+    [owner, repo],
   );
+
+  const inspection = useAsync<RepoInspection | null>(
+    () => (selected ? inspectRepo(owner, repo, branch) : Promise.resolve(null)),
+    [owner, repo, branch],
+  );
+
+  const ci = useAsync<CiState | null>(
+    () => (selected ? getCiStatus(owner, repo) : Promise.resolve(null)),
+    [owner, repo],
+  );
+
+  const detection = inspection.data;
+  const dockerfilePath = dockerfileOverride ?? detection?.dockerfilePath ?? 'Dockerfile';
+  const contextPath = contextOverride ?? detection?.contextPath ?? '.';
+  const containerPort =
+    portOverride ?? (detection?.suggestedPort ? String(detection.suggestedPort) : '3000');
+
+  const ciEnabled = ci.data?.status === 'enabled';
+  const enableCiOnCreate = ciChoice ?? !ciEnabled;
 
   const outsideContext =
     dockerfilePath.startsWith('../') ||
     (contextPath !== '.' && !dockerfilePath.startsWith(`${contextPath}/`));
 
+  const noDockerfile = detection !== null && !detection.hasDockerfile;
   const canSubmit =
     Boolean(selected) &&
     name.trim().length > 0 &&
     branch.trim().length > 0 &&
     !outsideContext &&
-    !submitting &&
-    projectId.length > 0;
+    !noDockerfile &&
+    !inspection.loading &&
+    !submitting;
 
-  const reposError = repos.error;
-  const needsReconnect =
-    reposError?.status === 401 ||
-    reposError?.code === 'github_token_rejected' ||
-    reposError?.code === 'github_not_connected';
-
-  function pick(repo: RepoOption) {
-    setSelected(repo);
-    setBranch(repo.defaultBranch);
-    if (!name.trim()) setName(repo.name);
+  function pick(option: RepoOption) {
+    setSelected(option);
+    setBranch(option.defaultBranch);
+    setDockerfileOverride(null);
+    setContextOverride(null);
+    setPortOverride(null);
+    if (!name.trim()) setName(option.name);
   }
 
   async function submit() {
@@ -65,6 +98,13 @@ export function NewServicePage({ projectId }: { projectId: string }) {
         contextPath,
         containerPort: Number(containerPort) || undefined,
       });
+
+      // Enable CI here rather than making the operator find the panel later. A
+      // failure is not fatal: the service page shows the CI banner with the reason.
+      if (enableCiOnCreate && !ciEnabled) {
+        await enableCi(owner, repo, false).catch(() => undefined);
+      }
+
       navigate(`/services/${created.service.id}`);
     } catch (cause) {
       setError(cause instanceof ApiError ? cause : new ApiError(0, 'network_error', String(cause)));
@@ -130,12 +170,12 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                   </div>
                 ) : null}
 
-                {reposError ? (
+                {repos.error ? (
                   <div className="flex flex-col gap-2 rounded-md border border-red/30 bg-red/5 p-3">
                     <p className="font-mono text-mono-xs text-red">
-                      {reposError.code} · {reposError.message}
+                      {repos.error.code} · {repos.error.message}
                     </p>
-                    {needsReconnect ? (
+                    {repos.error.status === 401 || repos.error.code === 'github_token_rejected' ? (
                       <a
                         href="/auth/github"
                         className="self-start rounded border border-lime px-2 py-1 text-ui-sm text-lime hover:bg-lime/10"
@@ -164,6 +204,46 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                 ) : null}
               </div>
 
+              {selected ? (
+                <div className="rounded-md border border-line bg-surface-2/40 px-3 py-2 font-mono text-mono-xs">
+                  {inspection.loading ? (
+                    <span className="text-text-dim">inspecting repository…</span>
+                  ) : null}
+
+                  {inspection.error ? (
+                    <span className="text-red">inspect failed · {inspection.error.message}</span>
+                  ) : null}
+
+                  {noDockerfile ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="flex items-center gap-1.5 text-red">
+                        <Icon name="alert-triangle" className="h-3 w-3" />
+                        no Dockerfile in this repository
+                      </span>
+                      <span className="text-text-dim">
+                        nodock builds with a Dockerfile. Add one, or pick another repository.
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {detection?.hasDockerfile ? (
+                    <div className="flex flex-col gap-1 text-text-dim">
+                      <span className="text-lime">
+                        ✓ {detection.dockerfilePath}
+                        {detection.contextPath && detection.contextPath !== '.'
+                          ? ` · context ${detection.contextPath}`
+                          : ''}
+                      </span>
+                      <span>
+                        {detection.exposedPorts.length > 0
+                          ? `EXPOSE ${detection.exposedPorts.join(', ')}`
+                          : 'no EXPOSE in the Dockerfile — set the port your app listens on'}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div>
                 <label htmlFor="service-branch" className="mb-2 block text-ui-sm">
                   Branch
@@ -187,7 +267,6 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                     value={branch}
                     onChange={(event) => setBranch(event.target.value)}
                     disabled={!selected}
-                    placeholder={selected ? branch : 'pick a repository first'}
                     className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm disabled:opacity-50"
                   />
                 )}
@@ -200,7 +279,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                 <input
                   id="dockerfile-path"
                   value={dockerfilePath}
-                  onChange={(event) => setDockerfilePath(event.target.value)}
+                  onChange={(event) => setDockerfileOverride(event.target.value)}
                   className={`h-8 w-full rounded-md border bg-surface-2 px-3 font-mono text-ui-sm ${
                     outsideContext ? 'border-amber/50' : 'border-line'
                   }`}
@@ -217,7 +296,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                   >
                     {outsideContext
                       ? 'A Dockerfile outside the context directory will be rejected by docker build.'
-                      : 'Must live inside the build context below.'}
+                      : 'Prefilled from the repository. Must live inside the build context below.'}
                   </p>
                 </div>
               </div>
@@ -230,7 +309,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                   <input
                     id="context-path"
                     value={contextPath}
-                    onChange={(event) => setContextPath(event.target.value)}
+                    onChange={(event) => setContextOverride(event.target.value)}
                     className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                   />
                 </div>
@@ -241,11 +320,34 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                   <input
                     id="container-port"
                     value={containerPort}
-                    onChange={(event) => setContainerPort(event.target.value)}
+                    onChange={(event) => setPortOverride(event.target.value)}
                     className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                   />
                 </div>
               </div>
+              <p className="-mt-3 font-mono text-mono-xs text-text-dim">
+                {detection?.suggestedPort
+                  ? 'from EXPOSE in the Dockerfile — must be the port the process binds to 0.0.0.0'
+                  : 'the port your app listens on inside the container (default 3000)'}
+              </p>
+
+              <label className="flex items-start gap-2 rounded-md border border-line bg-surface-2/40 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={enableCiOnCreate}
+                  onChange={(event) => setCiChoice(event.target.checked)}
+                  disabled={ciEnabled}
+                  className="mt-0.5"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-ui-sm">Enable CI for this repository</span>
+                  <span className="font-mono text-mono-xs text-text-dim">
+                    {ciEnabled
+                      ? 'already enabled'
+                      : 'commits .github/workflows/nodock.yml and an Actions secret'}
+                  </span>
+                </span>
+              </label>
 
               {error ? (
                 <p className="rounded-md border border-red/30 bg-red/10 px-3 py-2 font-mono text-mono-xs text-red">

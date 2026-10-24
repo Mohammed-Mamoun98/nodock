@@ -7,6 +7,7 @@ import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { users } from '../db/schema';
 import { apiError } from '../http';
+import { findDockerfiles, parseExposedPorts } from '../lib/inspect-repo';
 
 function respondToGitHubError(c: Context, error: unknown) {
   if (error instanceof GitHubHttpError) {
@@ -124,6 +125,58 @@ export function registerGitHubRoutes(app: Hono, deps: GitHubRouteDeps): void {
       }
 
       return c.json(store(repoCache, cacheKey, { repos, truncated: hasMore }));
+    } catch (error) {
+      return respondToGitHubError(c, error);
+    }
+  });
+
+  /**
+   * What the wizard needs to fill itself in: Dockerfile presence/location and the
+   * port it exposes. One tree call plus one contents call, cached like branches.
+   */
+  app.get('/api/github/repos/:owner/:repo/inspect', async (c) => {
+    const auth = session(c.req.header('cookie'));
+    if (!auth) {
+      const { status, body } = apiError('github_not_connected', 'Sign in again', 409);
+      return c.json(body, status);
+    }
+
+    const repoFullName = `${c.req.param('owner')}/${c.req.param('repo')}`;
+    const missing = (['listTree', 'getFile', 'getRepo'] as const).filter(
+      (name) => typeof github[name] !== 'function',
+    );
+    if (missing.length > 0) {
+      const { status, body } = apiError(
+        'github_ops_unavailable',
+        `GitHub client is missing: ${missing.join(', ')}`,
+        501,
+      );
+      return c.json(body, status);
+    }
+
+    try {
+      const ref =
+        c.req.query('ref') || (await github.getRepo!(auth.token, repoFullName)).defaultBranch;
+      const tree = await github.listTree!(auth.token, repoFullName, ref);
+      const candidates = findDockerfiles(tree.paths);
+      const best = candidates[0] ?? null;
+
+      let exposedPorts: number[] = [];
+      if (best) {
+        const file = await github.getFile!(auth.token, repoFullName, best.path, ref);
+        if (file) exposedPorts = parseExposedPorts(file.content);
+      }
+
+      return c.json({
+        ref,
+        hasDockerfile: candidates.length > 0,
+        dockerfilePath: best?.path ?? null,
+        contextPath: best?.context ?? null,
+        candidates: candidates.map((candidate) => candidate.path).slice(0, 10),
+        exposedPorts,
+        suggestedPort: exposedPorts.length === 1 ? exposedPorts[0] : null,
+        treeTruncated: tree.truncated,
+      });
     } catch (error) {
       return respondToGitHubError(c, error);
     }

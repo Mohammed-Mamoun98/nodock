@@ -268,3 +268,21 @@ export function enableCi(
     body: JSON.stringify({ overwrite }),
   });
 }
+
+export interface RepoInspection {
+  ref: string;
+  hasDockerfile: boolean;
+  dockerfilePath: string | null;
+  contextPath: string | null;
+  candidates: string[];
+  exposedPorts: number[];
+  suggestedPort: number | null;
+  treeTruncated: boolean;
+}
+
+export function inspectRepo(owner: string, repo: string, ref?: string): Promise<RepoInspection> {
+  const query = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+  return request(
+    `/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/inspect${query}`,
+  );
+}

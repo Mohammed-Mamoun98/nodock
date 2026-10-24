@@ -49,6 +49,11 @@ export interface GitHubFile {
  * the CI routes answer 501 when a client does not implement them.
  */
 export interface GitHubOps {
+  listTree?(
+    accessToken: string,
+    repoFullName: string,
+    ref: string,
+  ): Promise<{ paths: string[]; truncated: boolean }>;
   getRepo?(accessToken: string, repoFullName: string): Promise<GitHubRepoInfo>;
   getBranchHead?(accessToken: string, repoFullName: string, branch: string): Promise<string>;
   getFile?(
@@ -186,6 +191,25 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
           pushedAt: repo.pushed_at ?? null,
         })),
         hasMore: body.length === page.perPage,
+      };
+    },
+
+    async listTree(accessToken, repoFullName, ref) {
+      const response = await githubFetch(
+        fetchImpl,
+        `https://api.github.com/repos/${repoPath(repoFullName)}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+        accessToken,
+      );
+      const body = (await response.json()) as {
+        tree?: { path: string; type: string }[];
+        truncated?: boolean;
+      };
+
+      return {
+        paths: (body.tree ?? [])
+          .filter((entry) => entry.type === 'blob')
+          .map((entry) => entry.path),
+        truncated: body.truncated ?? false,
       };
     },
 
