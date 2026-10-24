@@ -216,3 +216,55 @@ export function listBranches(owner: string, repo: string): Promise<{ branches: s
     `/api/github/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
   );
 }
+
+export interface DeploymentRow {
+  id: string;
+  status: DeploymentStatus;
+  trigger: 'manual' | 'push' | 'rollback';
+  commitSha: string | null;
+  imageRef: string;
+  imageDigest: string | null;
+  containerName: string | null;
+  ciRunUrl: string | null;
+  error: string | null;
+  createdAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export function listDeployments(serviceId: string): Promise<{ deployments: DeploymentRow[] }> {
+  return request(`/api/services/${serviceId}/deployments`);
+}
+
+export function deployService(
+  serviceId: string,
+  envId: string,
+): Promise<{ deployment: { id: string; status: DeploymentStatus } }> {
+  return request(`/api/services/${serviceId}/envs/${envId}/deploy`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export type CiStatus = 'not_enabled' | 'enabled' | 'out_of_date' | 'modified' | 'unknown';
+
+export interface CiState {
+  status: CiStatus;
+  reason?: string;
+  workflowPath?: string;
+}
+
+export function getCiStatus(owner: string, repo: string): Promise<CiState> {
+  return request(`/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/ci`);
+}
+
+export function enableCi(
+  owner: string,
+  repo: string,
+  overwrite = false,
+): Promise<{ status: 'enabled'; workflowSha: string }> {
+  return request(`/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/ci/enable`, {
+    method: 'POST',
+    body: JSON.stringify({ overwrite }),
+  });
+}

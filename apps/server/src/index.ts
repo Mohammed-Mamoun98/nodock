@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { createApp } from './app';
 import { createCaddyAdmin } from './caddy/admin';
 import { reconcileWithRetry } from './caddy/service';
+import { markInterruptedOnBoot, startWatchdog, sweepStaleDeployments } from './deploy/watchdog';
 import { loadConfig } from './config';
 import { openDatabase } from './db/client';
 
@@ -82,6 +83,19 @@ console.log(
 console.log(
   `[nodock] ghcr pull: ${config.ghcr.token ? 'token set' : 'anonymous (public packages only)'}`,
 );
+
+// Nothing can be mid-deploy across a restart, so those rows are marked failed
+// before anything else looks at them.
+const interrupted = markInterruptedOnBoot(db);
+const sweep = sweepStaleDeployments(db);
+if (interrupted > 0 || sweep.queuedFailed > 0 || sweep.inFlightFailed > 0) {
+  console.log(
+    `[nodock] recovery: ${interrupted} interrupted, ${sweep.queuedFailed} stale queued, ${sweep.inFlightFailed} stalled`,
+  );
+}
+const stopWatchdog = startWatchdog(db);
+process.on('SIGTERM', stopWatchdog);
+process.on('SIGINT', stopWatchdog);
 
 // Routing is re-applied from DB state on every boot: Caddy's config may have been
 // autosaved from an older generation, and nodock may have missed changes while down.

@@ -1,9 +1,9 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import { z } from 'zod';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
-import { environments, serviceEnvs, services } from '../db/schema';
+import { deployments, environments, serviceEnvs, services } from '../db/schema';
 import { apiError, validationError } from '../http';
 import {
   branch,
@@ -251,6 +251,54 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
       return c.json(body, status);
     }
     return c.body(null, 204);
+  });
+
+  app.get('/api/services/:id/deployments', (c) => {
+    const service = db
+      .select({ id: services.id })
+      .from(services)
+      .where(eq(services.id, c.req.param('id')))
+      .get();
+    if (!service) {
+      const { status, body } = apiError('not_found', 'Service not found', 404);
+      return c.json(body, status);
+    }
+
+    const limit = Math.min(Number(c.req.query('limit') ?? 20) || 20, 100);
+    const envIds = db
+      .select({ id: serviceEnvs.id })
+      .from(serviceEnvs)
+      .where(eq(serviceEnvs.serviceId, service.id))
+      .all()
+      .map((row) => row.id);
+
+    if (envIds.length === 0) return c.json({ deployments: [] });
+
+    const rows = db
+      .select()
+      .from(deployments)
+      .where(inArray(deployments.serviceEnvId, envIds))
+      .orderBy(desc(deployments.createdAt))
+      .limit(limit)
+      .all();
+
+    return c.json({
+      deployments: rows.map((row) => ({
+        id: row.id,
+        serviceEnvId: row.serviceEnvId,
+        status: row.status,
+        trigger: row.trigger,
+        commitSha: row.commitSha,
+        imageRef: row.imageRef,
+        imageDigest: row.imageDigest,
+        containerName: row.containerName,
+        ciRunUrl: row.ciRunUrl,
+        error: row.error,
+        createdAt: iso(row.createdAt),
+        startedAt: iso(row.startedAt),
+        finishedAt: iso(row.finishedAt),
+      })),
+    });
   });
 
   app.get('/api/services/:id/envs/:envId', (c) => {

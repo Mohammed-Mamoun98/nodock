@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { primaryAction, stateMeta } from '../lib/status';
 import type { ServiceView } from '../lib/view';
 import { Icon } from './Icon';
-import { BranchChip, Button, StatusWord } from './ui';
+import { BranchChip, StatusWord } from './ui';
 
 export function ServiceCard({ service, selected }: { service: ServiceView; selected: boolean }) {
   const meta = stateMeta[service.state];
@@ -50,7 +50,16 @@ export function ServiceCard({ service, selected }: { service: ServiceView; selec
             <Icon name="arrow-up-right" />
           </a>
         ) : (
-          <Button variant={action.kind}>{action.label}</Button>
+          <a
+            href={`#/services/${service.id}`}
+            className={`inline-flex h-[28px] items-center gap-1.5 rounded-[6px] px-3 text-ui-sm transition-colors ${
+              action.kind === 'primary'
+                ? 'bg-lime font-medium text-lime-ink hover:bg-lime/90'
+                : 'border border-line text-text hover:bg-surface-2'
+            }`}
+          >
+            {action.label}
+          </a>
         )}
 
         <button
