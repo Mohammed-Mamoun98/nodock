@@ -56,6 +56,8 @@ export interface GitHubOps {
   ): Promise<{ paths: string[]; truncated: boolean }>;
   getRepo?(accessToken: string, repoFullName: string): Promise<GitHubRepoInfo>;
   getBranchHead?(accessToken: string, repoFullName: string, branch: string): Promise<string>;
+  /** First line of a commit message, shown on deployment cards. */
+  getCommitMessage?(accessToken: string, repoFullName: string, sha: string): Promise<string | null>;
   getFile?(
     accessToken: string,
     repoFullName: string,
@@ -242,6 +244,24 @@ export function createGitHubClient(fetchImpl: typeof fetch = fetch): GitHubClien
       const body = (await response.json()) as { sha?: string };
       if (!body.sha) throw new GitHubHttpError(502, 'GitHub returned no commit for that branch');
       return body.sha;
+    },
+
+    async getCommitMessage(accessToken, repoFullName, sha) {
+      const response = await fetchImpl(
+        `https://api.github.com/repos/${repoPath(repoFullName)}/commits/${encodeURIComponent(sha)}`,
+        {
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            accept: 'application/vnd.github+json',
+            'user-agent': 'nodock',
+          },
+        },
+      );
+      if (!response.ok) return null;
+
+      const body = (await response.json()) as { commit?: { message?: string } };
+      const first = body.commit?.message?.split('\n')[0]?.trim();
+      return first ? first.slice(0, 200) : null;
     },
 
     async getFile(accessToken, repoFullName, path, ref) {

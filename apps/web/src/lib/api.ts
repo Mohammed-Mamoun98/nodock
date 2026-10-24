@@ -222,6 +222,7 @@ export interface DeploymentRow {
   status: DeploymentStatus;
   trigger: 'manual' | 'push' | 'rollback';
   commitSha: string | null;
+  commitMessage: string | null;
   imageRef: string;
   imageDigest: string | null;
   containerName: string | null;

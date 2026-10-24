@@ -22,6 +22,8 @@ interface DashboardPageProps {
   overview: ProjectOverview | null;
   error: ApiError | null;
   loading: boolean;
+  /** Service currently open in the side panel, highlighted on the canvas. */
+  selectedServiceId?: string | null;
   reload: () => void;
   onDeleted: () => void;
 }
@@ -31,6 +33,7 @@ export function DashboardPage({
   overview,
   error,
   loading,
+  selectedServiceId = null,
   reload,
   onDeleted,
 }: DashboardPageProps) {
@@ -50,7 +53,8 @@ export function DashboardPage({
     undeployed: services.filter((s) => s.state === 'undeployed').length,
   };
   const visible = filter === 'all' ? services : services.filter((s) => s.state === filter);
-  const selectedId = services.find((s) => s.state === 'building')?.id ?? services[0]?.id;
+  const selectedId =
+    selectedServiceId ?? services.find((s) => s.state === 'building')?.id ?? services[0]?.id;
 
   return (
     <main className="relative flex flex-1 flex-col overflow-y-auto bg-canvas dot-grid">

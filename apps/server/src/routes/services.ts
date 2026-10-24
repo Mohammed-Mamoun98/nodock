@@ -319,6 +319,7 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
         status: row.status,
         trigger: row.trigger,
         commitSha: row.commitSha,
+        commitMessage: row.commitMessage,
         imageRef: row.imageRef,
         imageDigest: row.imageDigest,
         containerName: row.containerName,

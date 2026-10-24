@@ -347,6 +347,12 @@ async function startDeployment(
     };
   }
 
+  // Best effort: the commit subject makes the deployment list readable, but a
+  // failure here must never block a deploy.
+  const commitMessage = github.getCommitMessage
+    ? await github.getCommitMessage(adminToken, service.repoFullName, sha).catch(() => null)
+    : null;
+
   const image = imageRef(service.repoFullName, service.slug, sha);
   const deployment = db
     .insert(deployments)
@@ -355,6 +361,7 @@ async function startDeployment(
       trigger,
       status: 'queued',
       commitSha: sha,
+      commitMessage,
       imageRef: image,
     })
     .returning()

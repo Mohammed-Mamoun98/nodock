@@ -13,15 +13,14 @@ import {
   type ProjectSummary,
   type ApiError,
 } from './lib/api';
-import { useRoute } from './lib/router';
+import { navigate, useRoute } from './lib/router';
 import { isDeploymentInFlight } from './lib/status';
 import { useAsync } from './lib/useAsync';
 import { CreateProjectPage } from './pages/CreateProjectPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { NewServicePage } from './pages/NewServicePage';
-import { ServicePage } from './pages/ServicePage';
-import { VariablesPage } from './pages/VariablesPage';
+import { ServicePanel } from './pages/ServicePanel';
 
 type Session =
   | { status: 'loading' }
@@ -123,30 +122,46 @@ export default function App() {
           <CreateProjectPage onCreated={projects.reload} />
         ) : (
           <>
-            {route.name === 'dashboard' && activeProjectId ? (
-              <DashboardPage
-                projectId={activeProjectId}
-                overview={overview.data}
-                error={overview.error as ApiError | null}
-                loading={overview.loading}
-                reload={() => {
-                  overview.reload();
-                  projects.reload();
-                }}
-                onDeleted={() => {
-                  projects.reload();
-                  overview.reload();
-                }}
-              />
+            {route.name === 'dashboard' || route.name === 'service' ? (
+              <>
+                {activeProjectId ? (
+                  <DashboardPage
+                    projectId={activeProjectId}
+                    overview={overview.data}
+                    error={overview.error as ApiError | null}
+                    loading={overview.loading}
+                    selectedServiceId={route.name === 'service' ? route.serviceId : null}
+                    reload={() => {
+                      overview.reload();
+                      projects.reload();
+                    }}
+                    onDeleted={() => {
+                      projects.reload();
+                      overview.reload();
+                    }}
+                  />
+                ) : null}
+
+                {/* The service is a side panel, like Railway: the canvas stays visible. */}
+                {route.name === 'service' ? (
+                  <ServicePanel
+                    serviceId={route.serviceId}
+                    onClose={() => {
+                      window.location.hash = '/';
+                      overview.reload();
+                    }}
+                  />
+                ) : null}
+              </>
             ) : null}
 
             {route.name === 'new-service' ? (
               <NewServicePage projectId={route.projectId ?? activeProjectId ?? ''} />
             ) : null}
 
-            {route.name === 'service' ? <ServicePage serviceId={route.serviceId} /> : null}
-
-            {route.name === 'variables' ? <VariablesPage serviceId={route.serviceId} /> : null}
+            {route.name === 'variables' ? (
+              <ServicePanel serviceId={route.serviceId} onClose={() => navigate('/')} />
+            ) : null}
           </>
         )}
 
