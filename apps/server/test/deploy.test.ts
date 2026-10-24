@@ -39,10 +39,15 @@ interface DockerCalls {
   logins: string[];
 }
 
-function fakeDocker(options: { pullOk?: boolean; inspectRunning?: boolean } = {}) {
+function fakeDocker(
+  options: { pullOk?: boolean; inspectRunning?: boolean; exposedPorts?: number[] } = {},
+) {
   const calls: DockerCalls = { pulled: [], run: [], stopped: [], removed: [], logins: [] };
 
   const docker: DockerAdapter = {
+    async exposedPorts() {
+      return options.exposedPorts ?? [];
+    },
     async logs() {
       return 'Error: listen EADDRINUSE';
     },
@@ -324,6 +329,37 @@ describe('deploy pipeline', () => {
     expect(
       db.select().from(deployments).where(eq(deployments.id, pending.id)).get()?.error,
     ).toContain('manifest unknown');
+  });
+
+  test("an unset port is taken from the image's EXPOSE", async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    // seed() leaves containerPort at 3000 via the service row; clear it first.
+    db.update(services).set({ containerPort: null }).run();
+
+    const { docker, calls } = fakeDocker({ exposedPorts: [3013] });
+    const { admin } = fakeAdmin();
+
+    const outcome = await runDeployment(
+      { config, db, docker, admin, health: async () => true },
+      pending.id,
+    );
+
+    expect(outcome).toBe('live');
+    expect(calls.run[0]?.name).toBeTruthy();
+    expect(db.select().from(services).get()?.containerPort).toBe(3013);
+  });
+
+  test('an explicit port wins over EXPOSE', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    db.update(services).set({ containerPort: 8080 }).run();
+
+    const { docker } = fakeDocker({ exposedPorts: [3013] });
+    const { admin } = fakeAdmin();
+
+    await runDeployment({ config, db, docker, admin, health: async () => true }, pending.id);
+    expect(db.select().from(services).get()?.containerPort).toBe(8080);
   });
 
   test('the running deployment is never superseded by itself', async () => {

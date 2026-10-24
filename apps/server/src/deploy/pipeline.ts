@@ -81,7 +81,9 @@ export async function runDeployment(
     return 'failed';
   }
 
-  const port = service.containerPort ?? 3000;
+  // An unset port is resolved from the image's EXPOSE after the pull, which is the
+  // only moment the image metadata is available and trustworthy.
+  let port = service.containerPort ?? 0;
   const name = containerName(service.slug, 'prod', deployment.id);
 
   const previous = db
@@ -109,6 +111,24 @@ export async function runDeployment(
       log(deploymentId, explanation);
       fail(db, deploymentId, explanation, now());
       return 'failed';
+    }
+
+    if (!port) {
+      const exposed = docker.exposedPorts ? await docker.exposedPorts(deployment.imageRef) : [];
+      const chosen = exposed.length === 1 ? exposed[0] : 0;
+      if (chosen) {
+        port = chosen;
+        db.update(services).set({ containerPort: chosen }).where(eq(services.id, service.id)).run();
+        log(deploymentId, `container port ${chosen} taken from the image's EXPOSE`);
+      } else {
+        port = 3000;
+        log(
+          deploymentId,
+          exposed.length === 0
+            ? 'image declares no EXPOSE; using 3000 — set the container port if that is wrong'
+            : `image exposes ${exposed.join(', ')}; using 3000 — set the container port explicitly`,
+        );
+      }
     }
 
     setStatus('starting', { containerName: name });

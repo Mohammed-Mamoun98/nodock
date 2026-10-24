@@ -30,6 +30,8 @@ export interface DockerAdapter {
   pull(image: string, onLine: (line: string) => void): Promise<PullResult>;
   run(spec: ContainerSpec): Promise<{ id: string }>;
   inspect(name: string): Promise<ContainerState | null>;
+  /** Ports the image declares via EXPOSE — the fallback when a service has none. */
+  exposedPorts?(image: string): Promise<number[]>;
   /** Tail of the container's stdout/stderr, used to explain a failed health check. */
   logs?(name: string, tailLines: number): Promise<string>;
   stop(name: string, graceSeconds: number): Promise<void>;
@@ -208,6 +210,29 @@ export function createDockerCli(run: typeof Bun.spawn = Bun.spawn): DockerAdapte
         exitCode: exitCode === '<no value>' ? null : Number(exitCode),
         status: status ?? 'unknown',
       };
+    },
+
+    async exposedPorts(image) {
+      const child = run(
+        ['docker', 'image', 'inspect', '--format', '{{json .Config.ExposedPorts}}', image],
+        {
+          stdout: 'pipe',
+          stderr: 'pipe',
+          stdin: 'ignore',
+        },
+      );
+      const out = await new Response(child.stdout).text();
+      const code = await child.exited;
+      if (code !== 0) return [];
+
+      try {
+        const parsed = JSON.parse(out.trim() || 'null') as Record<string, unknown> | null;
+        return Object.keys(parsed ?? {})
+          .map((entry) => Number(entry.split('/')[0]))
+          .filter((port) => Number.isFinite(port) && port > 0);
+      } catch {
+        return [];
+      }
     },
 
     async logs(name, tailLines) {
