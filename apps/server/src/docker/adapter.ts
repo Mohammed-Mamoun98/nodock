@@ -22,6 +22,9 @@ export interface ContainerState {
 }
 
 export interface DockerAdapter {
+  /** Daemon reachable? Returns the server version. */
+  ping?(): Promise<string>;
+  networkExists?(name: string): Promise<boolean>;
   pull(image: string, onLine: (line: string) => void): Promise<PullResult>;
   run(spec: ContainerSpec): Promise<{ id: string }>;
   inspect(name: string): Promise<ContainerState | null>;
@@ -97,6 +100,28 @@ export function createDockerCli(run: typeof Bun.spawn = Bun.spawn): DockerAdapte
   }
 
   return {
+    async ping() {
+      const child = run(['docker', 'version', '--format', '{{.Server.Version}}'], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        stdin: 'ignore',
+      });
+      const [out, err] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      const code = await child.exited;
+      if (code !== 0) {
+        throw new Error((err || out).trim().split('\n')[0] || 'docker daemon unreachable');
+      }
+      return out.trim();
+    },
+
+    async networkExists(name) {
+      const code = await exec(['network', 'inspect', name]);
+      return code === 0;
+    },
+
     async pull(image, onLine) {
       const child = run(['docker', 'pull', image], { stdout: 'pipe', stderr: 'pipe' });
 

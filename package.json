@@ -12,6 +12,7 @@
     "start:server": "bun --smol apps/server/src/index.ts",
     "build:web": "bun run --cwd apps/web build",
     "smoke:web": "bun run build:web && bun scripts/smoke-web.ts && SMOKE_ANONYMOUS=1 bun scripts/smoke-web.ts",
+    "doctor": "bun scripts/doctor.ts",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt --write",

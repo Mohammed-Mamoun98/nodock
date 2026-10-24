@@ -18,6 +18,7 @@ import type { CaddyAdmin } from '../caddy/admin';
 import { runDeployment } from '../deploy/pipeline';
 import type { DockerAdapter } from '../docker/adapter';
 import { apiError, validationError } from '../http';
+import { runDoctor } from '../doctor';
 import { findServiceEnv } from './services';
 import { z } from 'zod';
 
@@ -63,6 +64,12 @@ function requireOps(github: GitHubClient) {
 export function registerCiRoutes(app: Hono, deps: CiDeps): void {
   const { config, db, github } = deps;
   const now = deps.now ?? (() => Date.now());
+
+  // Same checks as `bun run doctor`, for the panel and for CI.
+  app.get('/api/doctor', async (c) => {
+    const report = await runDoctor({ config, db, docker: deps.docker, admin: deps.admin ?? null });
+    return c.json(report, report.ok ? 200 : 503);
+  });
 
   app.get('/api/repos/:owner/:repo/ci', async (c) => {
     const auth = sessionToken(db, config, c.req.header('cookie'), now());

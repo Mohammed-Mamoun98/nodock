@@ -96,7 +96,25 @@ DATA_DIR=/data
 - HTTPS flips the session cookie to `Secure` automatically (derived from `NODOCK_URL`).
 - Leave `ALLOWED_ORIGINS` unset in production. It exists for the Vite dev server.
 
-## 5. Boot order
+## 5. Preflight: `nodock doctor`
+
+Before pointing a real repository at the install, run the checks that the first deploy
+depends on:
+
+```bash
+docker compose -f /opt/nodock/compose.yml exec nodock bun apps/server/src/doctor.ts
+```
+
+It verifies, in the order things actually break: GitHub OAuth credentials, the admin
+allowlist, `NODOCK_URL`, Caddy's admin URL, the GHCR token (warning only), database
+writes to `/data`, the Docker daemon, the shared `nodock` network, Caddy's admin API, the
+certificate gate (`/ask` must allow the panel host), and DNS for both the panel host and
+the `*.BASE_DOMAIN` wildcard. DNS problems are warnings, not blockers — records take time
+to propagate.
+
+The same report is available at `GET /api/doctor` (HTTP 503 when a check fails).
+
+## 6. Boot order
 
 1. `./scripts/install.sh` (writes `.env`, 2 GB swap), or write `.env` by hand.
 2. `docker compose -f docker/compose.yml up -d` — Caddy first, then nodock re-renders and
@@ -105,7 +123,7 @@ DATA_DIR=/data
 4. Open the panel, sign in, confirm the boot log reported
    `github oauth: configured` and a non-empty allowlist.
 
-## 6. Verification checklist
+## 7. Verification checklist
 
 - [ ] `https://panel.tenorlabs.dev` has a trusted cert (no warnings, no staging CA)
 - [ ] `http://panel.tenorlabs.dev` redirects to https
