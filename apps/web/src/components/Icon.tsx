@@ -44,8 +44,17 @@ const paths = {
   'arrow-up-right': <path d="M5 11L11 5M6.5 5H11v4.5" />,
   settings: (
     <>
-      <circle cx="8" cy="8" r="2" />
-      <path d="M8 1.8v1.4M8 12.8v1.4M2.1 4.9l1.8 1M12.1 10.1l1.8 1M2.1 11.1l1.8-1M12.1 5.9l1.8-1" />
+      <path d="M2.5 5.5h11M2.5 10.5h11" />
+      <circle cx="6" cy="5.5" r="1.7" />
+      <circle cx="10.5" cy="10.5" r="1.7" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />
+      <rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
+      <rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
+      <rect x="9" y="9" width="4.5" height="4.5" rx="1" />
     </>
   ),
   layers: (

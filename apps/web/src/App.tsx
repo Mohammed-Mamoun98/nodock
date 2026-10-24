@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LeftRail } from './components/LeftRail';
+import { IconRail } from './components/IconRail';
 import { TopBar } from './components/TopBar';
 import { LinkButton } from './components/ui';
 import {
@@ -37,6 +37,7 @@ export default function App() {
   const route = useRoute();
   const [session, setSession] = useState<Session>({ status: 'loading' });
   const [rss, setRss] = useState<number | null>(null);
+  const [selectedEnvId, setSelectedEnvId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,12 +98,34 @@ export default function App() {
   }
 
   const needsProject = !projects.loading && projectList.length === 0;
+  const environmentList = overview.data?.environments ?? [];
+  const activeEnvId =
+    (selectedEnvId && environmentList.some((env) => env.id === selectedEnvId)
+      ? selectedEnvId
+      : null) ??
+    environmentList.find((env) => env.isDefault)?.id ??
+    environmentList[0]?.id ??
+    null;
+  const activePath =
+    route.name === 'service' || route.name === 'dashboard'
+      ? 'canvas'
+      : route.name === 'new-service'
+        ? 'new-service'
+        : 'settings';
 
   return (
     <div className="flex h-full flex-col">
       <TopBar
-        project={overview.data?.project.name ?? 'no project'}
-        environment={overview.data?.environments[0]?.name ?? 'Production'}
+        projects={projectList}
+        activeProjectId={activeProjectId}
+        onSelectProject={(id) => {
+          setSelectedEnvId(null);
+          navigate(`/?project=${id}`);
+          projects.reload();
+        }}
+        environments={environmentList}
+        activeEnvId={activeEnvId}
+        onSelectEnvironment={setSelectedEnvId}
         ghcr={session.me.needsReconnect ? 'warn' : 'ok'}
         avatarUrl={session.me.avatarUrl}
         login={session.me.login}
@@ -111,13 +134,7 @@ export default function App() {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <LeftRail
-          projects={projectList}
-          environments={overview.data?.environments ?? []}
-          activeProjectId={activeProjectId}
-          activeEnvId={overview.data?.environments[0]?.id ?? null}
-          controlPlaneMb={rss}
-        />
+        <IconRail activePath={activePath} controlPlaneMb={rss} projectCount={projectList.length} />
 
         {needsProject ? (
           <CreateProjectPage onCreated={projects.reload} />
@@ -143,6 +160,7 @@ export default function App() {
                 {route.name === 'service' ? (
                   <ServicePanel
                     serviceId={route.serviceId}
+                    activeEnvId={activeEnvId}
                     onClose={() => {
                       window.location.hash = '/';
                       overview.reload();
@@ -168,7 +186,11 @@ export default function App() {
             ) : null}
 
             {route.name === 'variables' ? (
-              <ServicePanel serviceId={route.serviceId} onClose={() => navigate('/')} />
+              <ServicePanel
+                serviceId={route.serviceId}
+                activeEnvId={activeEnvId}
+                onClose={() => navigate('/')}
+              />
             ) : null}
           </>
         )}

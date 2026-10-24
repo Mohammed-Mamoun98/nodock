@@ -37,14 +37,6 @@ export function DashboardPage({
         </span>
 
         <div className="flex items-center gap-2">
-          <a
-            href="#/settings"
-            aria-label="Project settings"
-            title="Project settings"
-            className="inline-flex h-7 w-7 items-center justify-center rounded text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
-          >
-            <Icon name="settings" />
-          </a>
           <LinkButton
             to={`#/services/new?project=${projectId}`}
             variant="secondary"

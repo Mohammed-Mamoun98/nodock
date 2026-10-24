@@ -121,7 +121,16 @@ function DeploymentCard({
   );
 }
 
-export function ServicePanel({ serviceId, onClose }: { serviceId: string; onClose: () => void }) {
+export function ServicePanel({
+  serviceId,
+  activeEnvId,
+  onClose,
+}: {
+  serviceId: string;
+  /** Environment chosen in the top bar; falls back to the service's first env. */
+  activeEnvId?: string | null;
+  onClose: () => void;
+}) {
   const [tab, setTab] = useState<Tab>('Deployments');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -139,7 +148,10 @@ export function ServicePanel({ serviceId, onClose }: { serviceId: string; onClos
   const activeRow = rows.find((row) => row.status === 'live') ?? rows[0] ?? null;
   const history = rows.filter((row) => row.id !== activeRow?.id);
 
-  const link = service.data?.serviceEnvs[0] ?? null;
+  const link =
+    service.data?.serviceEnvs.find((env) => env.environmentId === activeEnvId) ??
+    service.data?.serviceEnvs[0] ??
+    null;
   const host = link?.customDomain ?? link?.generatedHost ?? '';
   const state = deriveState(
     activeRow

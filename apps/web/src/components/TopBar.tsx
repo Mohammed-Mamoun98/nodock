@@ -1,8 +1,13 @@
+import { Dropdown } from './Dropdown';
 import { Icon } from './Icon';
 
 interface TopBarProps {
-  project: string;
-  environment: string;
+  projects: { id: string; name: string; serviceCount?: number }[];
+  activeProjectId: string | null;
+  onSelectProject: (id: string) => void;
+  environments: { id: string; name: string; serviceCount: number; isDefault?: boolean }[];
+  activeEnvId: string | null;
+  onSelectEnvironment: (id: string) => void;
   ghcr: 'ok' | 'warn' | 'error';
   reconnecting?: boolean;
   avatarUrl?: string | null;
@@ -13,13 +18,17 @@ interface TopBarProps {
 
 const ghcrTone: Record<TopBarProps['ghcr'], { dot: string; label: string }> = {
   ok: { dot: 'bg-lime', label: 'GHCR ok' },
-  warn: { dot: 'bg-amber', label: 'GHCR token expiring' },
-  error: { dot: 'bg-red', label: 'GHCR pull failed' },
+  warn: { dot: 'bg-amber', label: 'GHCR token' },
+  error: { dot: 'bg-red', label: 'GHCR failed' },
 };
 
 export function TopBar({
-  project,
-  environment,
+  projects,
+  activeProjectId,
+  onSelectProject,
+  environments,
+  activeEnvId,
+  onSelectEnvironment,
   ghcr,
   reconnecting,
   avatarUrl,
@@ -28,6 +37,8 @@ export function TopBar({
   onSignOut,
 }: TopBarProps) {
   const tone = ghcrTone[ghcr];
+  const activeProject = projects.find((project) => project.id === activeProjectId);
+  const activeEnv = environments.find((env) => env.id === activeEnvId);
 
   return (
     <>
@@ -40,27 +51,47 @@ export function TopBar({
         </div>
       ) : null}
 
-      <header className="flex h-[56px] shrink-0 items-center justify-between border-b border-line bg-surface px-4">
-        <div className="flex items-center gap-4">
-          <a href="#/" className="flex items-center gap-2">
-            <span className="h-2 w-2 bg-lime" aria-hidden />
-            <span className="font-sans text-ui-lg font-semibold">nodock</span>
-          </a>
+      <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+        <a href="#/" className="flex shrink-0 items-center gap-2 pl-1">
+          <span className="h-2 w-2 bg-lime" aria-hidden />
+          <span className="font-sans text-ui-lg font-semibold">nodock</span>
+        </a>
 
-          <button
-            type="button"
-            className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-surface-2 px-2.5 text-ui-sm transition-colors hover:border-line-strong"
-          >
-            {project}
-            <Icon name="chevron-down" className="text-text-dim" />
-          </button>
+        <span className="text-text-dim" aria-hidden>
+          /
+        </span>
 
-          <span className="flex h-7 items-center rounded-md border border-lime/30 px-2.5 text-ui-sm text-lime">
-            {environment}
-          </span>
-        </div>
+        <Dropdown
+          ariaLabel="Switch project"
+          label={activeProject?.name ?? 'no project'}
+          items={projects.map((project) => ({
+            id: project.id,
+            label: project.name,
+            meta: String(project.serviceCount ?? 0),
+          }))}
+          activeId={activeProjectId}
+          onSelect={onSelectProject}
+          emptyLabel="no projects yet"
+        />
 
-        <div className="flex items-center gap-5">
+        <span className="text-text-dim" aria-hidden>
+          /
+        </span>
+
+        <Dropdown
+          ariaLabel="Switch environment"
+          label={activeEnv?.name ?? 'Production'}
+          items={environments.map((env) => ({
+            id: env.id,
+            label: env.name,
+            meta: env.isDefault ? 'default' : `${env.serviceCount}`,
+          }))}
+          activeId={activeEnvId}
+          onSelect={onSelectEnvironment}
+          emptyLabel="no environments"
+        />
+
+        <div className="ml-auto flex items-center gap-4">
           {needsReconnect ? (
             <a
               href="/auth/github"
@@ -70,9 +101,7 @@ export function TopBar({
             </a>
           ) : null}
 
-          <span className="hidden font-mono text-mono-xs text-text-dim sm:inline">⌘K</span>
-
-          <span className="flex items-center gap-1.5">
+          <span className="hidden items-center gap-1.5 sm:flex">
             <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} aria-hidden />
             <span className="font-mono text-mono-xs text-text-dim">{tone.label}</span>
           </span>
@@ -81,8 +110,7 @@ export function TopBar({
             <button
               type="button"
               onClick={onSignOut}
-              title={login ? `Sign out ${login}` : 'Sign out'}
-              className="hidden text-ui-sm text-text-dim transition-colors hover:text-text sm:inline"
+              className="hidden font-mono text-mono-xs text-text-dim transition-colors hover:text-text sm:inline"
             >
               sign out
             </button>
@@ -95,7 +123,9 @@ export function TopBar({
               className="h-7 w-7 rounded-full border border-line"
             />
           ) : (
-            <span className="h-7 w-7 rounded-full border border-line bg-surface-2" aria-hidden />
+            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line bg-surface-2 text-text-dim">
+              <Icon name="github" className="h-3.5 w-3.5" />
+            </span>
           )}
         </div>
       </header>
