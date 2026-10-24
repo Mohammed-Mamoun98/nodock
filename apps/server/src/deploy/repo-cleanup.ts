@@ -63,6 +63,9 @@ export async function cleanupReposIfUnused(
 
     if (adminToken && hook.hookId && github.deleteWebhook) {
       try {
+        // Sequential: these are two calls against one repo, and ordering makes the
+        // log readable when one of them is refused.
+        // eslint-disable-next-line no-await-in-loop
         await github.deleteWebhook(adminToken, repo, hook.hookId);
         result.removed.push('webhook');
       } catch (error) {
@@ -72,6 +75,7 @@ export async function cleanupReposIfUnused(
 
     if (adminToken && github.deleteActionsSecret) {
       try {
+        // eslint-disable-next-line no-await-in-loop
         await github.deleteActionsSecret(adminToken, repo, CI_SECRET_NAME);
         result.removed.push(`secret ${CI_SECRET_NAME}`);
       } catch (error) {

@@ -563,26 +563,26 @@ describe('teardown', () => {
   });
 });
 
-describe('repo cleanup on delete', () => {
-  function fakeRepoOps(existing: { hookId?: number } = {}) {
-    const calls: string[] = [];
-    const github = {
-      authorizeUrl: () => 'https://github.com/login/oauth/authorize',
-      exchangeCode: async () => ({ accessToken: 'gho', scopes: ['repo', 'workflow'] }),
-      getUser: async () => ({ id: 1, login: 'mohammed', avatarUrl: null }),
-      listRepos: async () => ({ repos: [], hasMore: false }),
-      listBranches: async () => ['main'],
-      deleteWebhook: async (_token: string, repo: string, hookId: number) => {
-        calls.push(`webhook ${repo} #${hookId}`);
-        void existing;
-      },
-      deleteActionsSecret: async (_token: string, repo: string, name: string) => {
-        calls.push(`secret ${repo} ${name}`);
-      },
-    };
-    return { github, calls };
-  }
+function fakeRepoOps(existing: { hookId?: number } = {}) {
+  const calls: string[] = [];
+  const github = {
+    authorizeUrl: () => 'https://github.com/login/oauth/authorize',
+    exchangeCode: async () => ({ accessToken: 'gho', scopes: ['repo', 'workflow'] }),
+    getUser: async () => ({ id: 1, login: 'mohammed', avatarUrl: null }),
+    listRepos: async () => ({ repos: [], hasMore: false }),
+    listBranches: async () => ['main'],
+    deleteWebhook: async (_token: string, repo: string, hookId: number) => {
+      calls.push(`webhook ${repo} #${hookId}`);
+      void existing;
+    },
+    deleteActionsSecret: async (_token: string, repo: string, name: string) => {
+      calls.push(`secret ${repo} ${name}`);
+    },
+  };
+  return { github, calls };
+}
 
+describe('repo cleanup on delete', () => {
   test('deleting the last service for a repo revokes the webhook and CI secret', async () => {
     const { db } = testDb();
     const { service } = seed(db, { liveContainer: 'nodock-api-prod-abc12345' });

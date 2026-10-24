@@ -264,7 +264,7 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
       return c.json(body, status);
     }
 
-    const repoFullName = db
+    const owningRepo = db
       .select({ repoFullName: services.repoFullName })
       .from(services)
       .where(eq(services.id, serviceId))
@@ -276,8 +276,8 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
     await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
     await stopContainers(deps.docker, names);
 
-    if (deps.github && repoFullName) {
-      await cleanupReposIfUnused({ config, db, github: deps.github }, [repoFullName]);
+    if (deps.github && owningRepo) {
+      await cleanupReposIfUnused({ config, db, github: deps.github }, [owningRepo]);
     }
 
     return c.body(null, 204);
