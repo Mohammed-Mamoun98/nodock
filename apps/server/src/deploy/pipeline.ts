@@ -10,6 +10,11 @@ import type { Db } from '../db/client';
 import { deployments, serviceEnvs, services, variables } from '../db/schema';
 import type { DockerAdapter } from '../docker/adapter';
 import { containerName } from '../docker/adapter';
+import { explainPullFailure } from './pull-error';
+
+const REGISTRY = 'ghcr.io';
+/** One login per process: the daemon keeps the credential in /data/docker. */
+const loggedIn = new Set<string>();
 
 export type DeployOutcome = 'live' | 'failed' | 'skipped';
 
@@ -92,9 +97,12 @@ export async function runDeployment(
     setStatus('pulling', { startedAt: new Date(now()) });
     log(deploymentId, `pulling ${deployment.imageRef}`);
 
+    await ensureRegistryLogin(deps);
     const pulled = await docker.pull(deployment.imageRef, (line) => log(deploymentId, line));
     if (!pulled.ok) {
-      fail(db, deploymentId, pulled.error ?? 'pull failed', now());
+      const explanation = explainPullFailure(pulled.error ?? 'pull failed', config);
+      log(deploymentId, explanation);
+      fail(db, deploymentId, explanation, now());
       return 'failed';
     }
 
@@ -156,6 +164,30 @@ export async function runDeployment(
     await docker.remove(name).catch(() => {});
     fail(db, deploymentId, error instanceof Error ? error.message : String(error), now());
     return 'failed';
+  }
+}
+
+/**
+ * Private packages need an authenticated daemon. The token goes in over stdin and
+ * is remembered for the process lifetime; a failed login is not fatal here because
+ * public packages pull fine without it.
+ */
+async function ensureRegistryLogin(deps: DeployDeps): Promise<void> {
+  const { config, docker } = deps;
+  const user = config.ghcr.user;
+  const token = config.ghcr.token;
+
+  if (!docker.login || !user || !token) return;
+
+  const key = `${REGISTRY}:${user}`;
+  if (loggedIn.has(key)) return;
+
+  try {
+    await docker.login(REGISTRY, user, token);
+    loggedIn.add(key);
+  } catch (error) {
+    // Surfaces later as the pull failure, which explainPullFailure turns into advice.
+    void error;
   }
 }
 

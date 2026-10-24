@@ -24,6 +24,8 @@ export interface ContainerState {
 export interface DockerAdapter {
   /** Daemon reachable? Returns the server version. */
   ping?(): Promise<string>;
+  /** `docker login` against a registry, token passed on stdin (never argv). */
+  login?(registry: string, username: string, token: string): Promise<void>;
   networkExists?(name: string): Promise<boolean>;
   pull(image: string, onLine: (line: string) => void): Promise<PullResult>;
   run(spec: ContainerSpec): Promise<{ id: string }>;
@@ -115,6 +117,27 @@ export function createDockerCli(run: typeof Bun.spawn = Bun.spawn): DockerAdapte
         throw new Error((err || out).trim().split('\n')[0] || 'docker daemon unreachable');
       }
       return out.trim();
+    },
+
+    async login(registry, username, token) {
+      const child = run(['docker', 'login', registry, '--username', username, '--password-stdin'], {
+        stdin: 'pipe',
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+
+      child.stdin.write(`${token}\n`);
+      child.stdin.end();
+
+      const [out, err] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      const code = await child.exited;
+
+      if (code !== 0) {
+        throw new Error(`docker login ${registry} failed: ${(err || out).trim().slice(0, 200)}`);
+      }
     },
 
     async networkExists(name) {

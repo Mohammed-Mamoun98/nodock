@@ -36,12 +36,16 @@ interface DockerCalls {
   run: ContainerSpec[];
   stopped: string[];
   removed: string[];
+  logins: string[];
 }
 
 function fakeDocker(options: { pullOk?: boolean; inspectRunning?: boolean } = {}) {
-  const calls: DockerCalls = { pulled: [], run: [], stopped: [], removed: [] };
+  const calls: DockerCalls = { pulled: [], run: [], stopped: [], removed: [], logins: [] };
 
   const docker: DockerAdapter = {
+    async login(registry, username) {
+      calls.logins.push(`${registry}:${username}`);
+    },
     async pull(image) {
       calls.pulled.push(image);
       return options.pullOk === false ? { ok: false, error: 'manifest unknown' } : { ok: true };
@@ -133,6 +137,71 @@ function seed(db: ReturnType<typeof testDb>['db'], opts: { liveContainer?: strin
 
   return { service, serviceEnv, pending };
 }
+
+describe('private registry', () => {
+  const withCreds = loadConfig({
+    NODOCK_SECRET: 'x'.repeat(32),
+    NODOCK_URL: 'https://panel.example.com',
+    BASE_DOMAIN: 'apps.example.com',
+    DATA_DIR: '/tmp/nodock-pipeline-test',
+    ADMIN_GITHUB_LOGIN: 'mohammed',
+    GITHUB_CLIENT_ID: 'id',
+    GITHUB_CLIENT_SECRET: 'secret',
+    GHCR_USER: 'mohammed',
+    GHCR_TOKEN: 'ghp_readpackages',
+  });
+
+  test('logs in to ghcr before pulling when credentials exist', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    const { docker, calls } = fakeDocker();
+    const { admin } = fakeAdmin();
+
+    await runDeployment(
+      { config: withCreds, db, docker, admin, health: async () => true },
+      pending.id,
+    );
+
+    expect(calls.logins).toEqual(['ghcr.io:mohammed']);
+    expect(calls.pulled).toHaveLength(1);
+  });
+
+  test('does not log in without credentials', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    const { docker, calls } = fakeDocker();
+    const { admin } = fakeAdmin();
+
+    await runDeployment({ config, db, docker, admin, health: async () => true }, pending.id);
+
+    expect(calls.logins).toEqual([]);
+  });
+
+  test('an unauthorised pull explains the fix instead of echoing the daemon', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    const { docker } = fakeDocker();
+    const { admin } = fakeAdmin();
+
+    const denying: DockerAdapter = {
+      ...docker,
+      pull: async () => ({
+        ok: false,
+        error: 'Error response from daemon: error from registry: unauthorized unauthorized',
+      }),
+    };
+
+    await runDeployment(
+      { config, db, docker: denying, admin, health: async () => true },
+      pending.id,
+    );
+
+    const row = db.select().from(deployments).where(eq(deployments.id, pending.id)).get();
+    expect(row?.status).toBe('failed');
+    expect(row?.error).toContain('GHCR package is private');
+    expect(row?.error).toContain('read:packages');
+  });
+});
 
 describe('docker args', () => {
   test('never publishes a port and always constrains resources', () => {
