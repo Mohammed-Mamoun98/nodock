@@ -4,6 +4,14 @@ Every claim needs a source URL. Unverified items stay listed as pending rather t
 
 ## 1. Scope required to commit `.github/workflows/*` — VERIFIED
 
+**Decision (also on record):** keep OAuth App tokens **non-expiring**. No `offline_access`, no
+"expiring user tokens" app setting. Reasons: single admin; the token is encrypted with
+AES-256-GCM under a key derived from `NODOCK_SECRET`, so a stolen DB alone is inert; and rotating
+single-use refresh tokens introduce a silent failure in webhook-triggered dispatches (two
+concurrent refreshes revoke the family → deploys stop until manual re-login). Flip this when
+multi-user, org repos with SSO, or a compliance requirement appears — the upgrade path is
+`offline_access` + a refresh single-flight + two `users` columns.
+
 **Question:** which OAuth scope does nodock need to create/update `.github/workflows/nodock.yml`
 via the Contents API, and does it imply re-consent?
 

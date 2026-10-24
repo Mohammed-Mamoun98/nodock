@@ -54,6 +54,7 @@ allowlist, and the GHCR token are configured, so a silent config miss is visible
 - `i-wanna-build-sth-compiled-clock.md` — the v1 plan (scope, architecture, budgets, milestones)
 - `.superdesign/design-system.md` — the design contract (tokens, states, component conventions)
 - `docs/measurements.md` — resource budgets vs measured numbers
+- `docs/DEPLOY.md` — real-domain wiring: DNS, ACME, OAuth App, `.env`, checklist
 - `docs/research/` — external facts that were verified, with sources
 
 ## Auth
