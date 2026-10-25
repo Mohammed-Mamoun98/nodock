@@ -98,6 +98,12 @@ export type DeploymentStatus =
   /** Was live, then a newer deployment took the route. */
   | 'superseded';
 
+/** How a service is built; `dockerfile` is what everything created before this was. */
+export type Strategy = 'dockerfile' | 'next' | 'static' | 'railpack';
+
+/** What a deployment delivered: an image to run, or files to serve. */
+export type DeploymentMode = 'image' | 'artifact';
+
 /** `docker inspect` on the deployment's container. Null before the first check. */
 export type RuntimeState =
   | 'running'
@@ -118,6 +124,10 @@ export interface LatestDeployment {
   ciRunUrl: string | null;
   error: string | null;
   createdAt: string | null;
+  mode: DeploymentMode;
+  framework: string | null;
+  imageBytes: number | null;
+  artifactBytes: number | null;
   runtimeState: RuntimeState | null;
   /** The sentence to show instead of a green "live"; null when nothing is wrong. */
   runtimeWarning: string | null;
@@ -142,6 +152,9 @@ export interface ServiceSummary {
   contextPath: string;
   containerPort: number | null;
   memoryLimitMb: number | null;
+  strategy: Strategy;
+  outputDir: string | null;
+  spaFallback: boolean | null;
   serviceEnvs: ServiceEnvSummary[];
 }
 
@@ -179,6 +192,9 @@ export function createService(
     dockerfilePath?: string;
     contextPath?: string;
     containerPort?: number;
+    strategy?: Strategy;
+    outputDir?: string | null;
+    spaFallback?: boolean | null;
   },
 ): Promise<{ service: { id: string }; serviceEnv: { generatedHost: string } }> {
   return request(`/api/projects/${projectId}/services`, {
@@ -191,7 +207,7 @@ export function getVariables(
   serviceId: string,
   envId: string,
   reveal = false,
-): Promise<{ variables: VariableRow[] }> {
+): Promise<{ variables: VariableRow[]; buildTimePrefixes?: string[] }> {
   return request(`/api/services/${serviceId}/envs/${envId}/variables${reveal ? '?reveal=1' : ''}`);
 }
 
@@ -261,6 +277,10 @@ export interface DeploymentRow {
   commitMessage: string | null;
   imageRef: string;
   imageDigest: string | null;
+  mode: DeploymentMode;
+  framework: string | null;
+  imageBytes: number | null;
+  artifactBytes: number | null;
   containerName: string | null;
   ciRunUrl: string | null;
   error: string | null;
@@ -332,6 +352,15 @@ export interface RepoInspection {
   exposedPorts: number[];
   suggestedPort: number | null;
   treeTruncated: boolean;
+  /** What the repo looks like, so the wizard can prefill instead of asking. */
+  detection: {
+    strategy: Strategy;
+    framework: string;
+    contextPath: string;
+    outputDir: string | null;
+    spaFallback: boolean;
+    label: string;
+  };
 }
 
 export function inspectRepo(owner: string, repo: string, ref?: string): Promise<RepoInspection> {

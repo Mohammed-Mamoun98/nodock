@@ -7,7 +7,9 @@ import type { Db } from '../db/client';
 import type { DockerAdapter } from '../docker/adapter';
 import { cleanupReposIfUnused } from '../deploy/repo-cleanup';
 import {
+  artifactIdsFor,
   containerNamesFor,
+  removeArtifacts,
   reconcileRoutes,
   serviceEnvIdsForService,
   stopContainers,
@@ -26,7 +28,17 @@ import {
   memoryLimitMb,
   repoFullName,
 } from '../lib/build';
+import { STRATEGIES } from '../lib/framework';
 import { generatedHost, slugify, uniqueValue } from '../lib/slug';
+
+/** A directory inside the build context, never a path that leaves it. */
+const outputDir = z
+  .string()
+  .trim()
+  .max(255)
+  .regex(/^(?!\/)(?!.*\.\.)[A-Za-z0-9._\-/]+$/, 'Expected a directory relative to the repo');
+
+const strategy = z.enum(STRATEGIES);
 
 const createService = z.object({
   name: z.string().trim().min(1).max(80),
@@ -36,6 +48,9 @@ const createService = z.object({
   contextPath: contextPath.optional(),
   containerPort: containerPort.optional(),
   environmentId: z.string().min(1).optional(),
+  strategy: strategy.optional(),
+  outputDir: outputDir.nullable().optional(),
+  spaFallback: z.boolean().nullable().optional(),
 });
 
 const patchService = z.object({
@@ -43,6 +58,9 @@ const patchService = z.object({
   dockerfilePath: dockerfilePath.optional(),
   contextPath: contextPath.optional(),
   memoryLimitMb: memoryLimitMb.nullable().optional(),
+  strategy: strategy.optional(),
+  outputDir: outputDir.nullable().optional(),
+  spaFallback: z.boolean().nullable().optional(),
 });
 
 const patchServiceEnv = z.object({
@@ -73,6 +91,9 @@ export function serializeService(row: typeof services.$inferSelect) {
     contextPath: row.contextPath,
     containerPort: row.containerPort,
     memoryLimitMb: row.memoryLimitMb,
+    strategy: row.strategy,
+    outputDir: row.outputDir,
+    spaFallback: row.spaFallback,
     createdAt: iso(row.createdAt),
   };
 }
@@ -151,6 +172,9 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
         dockerfilePath: dockerfile,
         contextPath: context,
         containerPort: input.containerPort ?? null,
+        strategy: input.strategy ?? 'dockerfile',
+        outputDir: input.outputDir ?? null,
+        spaFallback: input.spaFallback ?? null,
       })
       .returning()
       .get();
@@ -245,6 +269,9 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
         ...(parsed.data.memoryLimitMb === undefined
           ? {}
           : { memoryLimitMb: parsed.data.memoryLimitMb }),
+        ...(parsed.data.strategy === undefined ? {} : { strategy: parsed.data.strategy }),
+        ...(parsed.data.outputDir === undefined ? {} : { outputDir: parsed.data.outputDir }),
+        ...(parsed.data.spaFallback === undefined ? {} : { spaFallback: parsed.data.spaFallback }),
       })
       .where(eq(services.id, current.id))
       .returning()
@@ -270,12 +297,15 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
       .from(services)
       .where(eq(services.id, serviceId))
       .get()?.repoFullName;
-    const names = containerNamesFor(db, serviceEnvIdsForService(db, serviceId));
+    const deletedEnvIds = serviceEnvIdsForService(db, serviceId);
+    const names = containerNamesFor(db, deletedEnvIds);
+    const artifacts = artifactIdsFor(db, deletedEnvIds);
 
     db.delete(services).where(eq(services.id, serviceId)).run();
 
     await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
     await stopContainers(deps.docker, names);
+    removeArtifacts(config.paths.artifactsDir, artifacts);
 
     if (deps.github && owningRepo) {
       await cleanupReposIfUnused({ config, db, github: deps.github }, [owningRepo]);
@@ -323,6 +353,11 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
         commitMessage: row.commitMessage,
         imageRef: row.imageRef,
         imageDigest: row.imageDigest,
+        // What the build delivered, and how big it was: an image or a directory.
+        mode: row.mode,
+        framework: row.framework,
+        imageBytes: row.imageBytes,
+        artifactBytes: row.artifactBytes,
         containerName: row.containerName,
         ciRunUrl: row.ciRunUrl,
         error: row.error,

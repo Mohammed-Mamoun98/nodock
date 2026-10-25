@@ -4,15 +4,26 @@ A lightweight, self-hosted PaaS with a Railway-like UX, built for one 2 GB / 1 v
 
 Two containers — nodock and Caddy — no Postgres, no Redis. Builds run in **GitHub Actions**,
 not on the server: nodock pulls the resulting image from GHCR, runs it, routes to it, and
-reports what the container is actually doing.
+reports what the container is actually doing. A repo without a Dockerfile still deploys: the
+build picks a recipe for what the repo is, and a site that builds to files never becomes a
+container at all.
 
 ## What works today
 
 - **Sign in with GitHub.** Single admin, allowlisted by login. Sessions are hashed, server-side
   tokens — no JWT machinery.
 - **Projects → environments → services.** Create a project, add a service from one of your
-  repos, pick a branch. nodock reads the Dockerfile first (`EXPOSE`, Dockerfile and context
-  paths) so the form is prefilled rather than guessed.
+  repos, pick a branch. nodock reads the repo first (`EXPOSE`, Dockerfile and context paths,
+  framework) so the form is prefilled rather than guessed.
+- **No Dockerfile required.** Four strategies, chosen by what the repository is:
+  `dockerfile` (unchanged, and it always wins if you add one), `next` (nodock's own recipe:
+  standalone ~220 MB, or a `next start` image with an amber advisory), `static` (Vite, Astro,
+  CRA, `next export` — files uploaded to nodock and served by Caddy, zero containers), and
+  `railpack` (everything else: Go, Python, PHP, Ruby, Nuxt, SvelteKit). The build reports what
+  it actually produced and how big it is; a guess made at create time never decides a deploy.
+- **Build-time variables, by rule.** Names starting with `NEXT_PUBLIC_`, `VITE_`, `REACT_APP_`,
+  `EXPO_PUBLIC_`, `NUXT_PUBLIC_` or `PUBLIC_` are sent to the build over the CI callback channel
+  and tagged `build` in the panel. No per-row toggle: forgetting one is the bug the rule removes.
 - **CI wired into the repo.** Enable CI commits `.github/workflows/nodock.yml`, stores a
   scoped callback secret as an Actions secret, and registers the push webhook. The panel says
   whether that workflow is current, edited, or deleted — and never overwrites your edits.
@@ -53,7 +64,7 @@ The API ships the same sentence the UI shows (`container killed by the OOM kille
 `container is gone — nothing is running for this deployment`), so every view tells one story.
 
 **Not in the panel yet:** start/stop/restart, persistent volumes, multi-replica services,
-CPU/RAM graphs, PR previews, teams, multi-server. Also not covered: an app that is _running but
+CPU/RAM graphs, PR previews, teams, multi-server, monorepo Next (`outputFileTracingRoot`). Also not covered: an app that is _running but
 broken_ (500s, wrong port) still looks healthy — that needs each service's health path polled
 continuously.
 

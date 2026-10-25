@@ -1,4 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { Context, Hono } from 'hono';
 import { decrypt, deriveKey, encrypt } from '../auth/crypto';
@@ -10,14 +12,18 @@ import {
   imageRef,
   renderWorkflow,
   WORKFLOW_PATH,
+  WORKFLOW_VERSION,
+  workflowSupportsStrategy,
 } from '../ci/workflow';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
-import { deployments, repoHooks, serviceEnvs, services, users } from '../db/schema';
+import { deployments, repoHooks, serviceEnvs, services, users, variables } from '../db/schema';
 import type { CaddyAdmin } from '../caddy/admin';
+import { extractArtifact, writeUpload } from '../deploy/artifact';
 import type { DeployLogs } from '../deploy/deploy-log';
 import { runDeployment } from '../deploy/pipeline';
 import type { DockerAdapter } from '../docker/adapter';
+import { buildTimeVariables } from '../lib/framework';
 import { apiError, validationError } from '../http';
 import { runDoctor } from '../doctor';
 import { findServiceEnv } from './services';
@@ -45,12 +51,28 @@ const IN_FLIGHT = ['queued', 'pulling', 'starting', 'healthchecking', 'switching
 
 const enableBody = z.object({ overwrite: z.boolean().default(false) });
 
+/** A v2 workflow sends numbers as strings and empty values for what it did not do. */
+const optionalNumber = z.preprocess(
+  (value) => (value === '' || value === null || value === undefined ? undefined : Number(value)),
+  z.number().int().nonnegative().optional(),
+);
+
+const optionalMode = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.enum(['image', 'artifact']).optional(),
+);
+
 const callbackBody = z.object({
   buildId: z.string().min(1),
   repo: z.string().min(1),
   runUrl: z.string().url().optional(),
   conclusion: z.string().optional(),
   digest: z.string().optional(),
+  // Present in v2 and optional forever: a v1 workflow in the wild still calls back.
+  mode: optionalMode,
+  framework: z.string().max(64).optional(),
+  imageBytes: optionalNumber,
+  artifactBytes: optionalNumber,
 });
 
 function requireOps(github: GitHubClient) {
@@ -219,6 +241,9 @@ export function registerCiRoutes(app: Hono, deps: CiDeps): void {
         webhookSecretEnc: encrypt(webhookSecret, deriveKey(config.secret)),
         ciTokenHash: sha256(ciToken),
         workflowSha: committed.contentSha,
+        // Bumped with the template: a repo holding v1 must not be sent a strategy
+        // its workflow cannot build.
+        workflowVersion: WORKFLOW_VERSION,
         ciEnabledAt: new Date(now()),
       };
 
@@ -421,6 +446,19 @@ async function startDeployment(
     };
   }
 
+  // A v1 workflow would build the Dockerfile for a repo that has none and look
+  // like it worked. Refusing, with the fix in the copy, is the smaller failure.
+  if (!workflowSupportsStrategy(hook.workflowVersion, service.strategy)) {
+    return {
+      error: {
+        code: 'workflow_out_of_date',
+        message:
+          'This repository still has the older nodock workflow. Re-sync it from the CI panel, then deploy again.',
+        status: 409,
+      },
+    };
+  }
+
   const missing = requireOps(github);
   if (missing) {
     return {
@@ -495,6 +533,8 @@ async function startDeployment(
         dockerfile: service.dockerfilePath,
         context: service.contextPath,
         serviceSlug: service.slug,
+        strategy: service.strategy,
+        outputDir: service.outputDir ?? '',
       }),
     });
   } catch (error) {
@@ -539,6 +579,171 @@ export function registerCiCallbacks(app: Hono, deps: CiDeps): void {
     return { hook, payload: parsed.data };
   }
 
+  /**
+   * The CI token proves which repo is calling; the build id alone proves nothing.
+   * Looked up by the token's own hash, exactly as sessions are.
+   */
+  function hookForToken(c: Context) {
+    const token = (c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, '');
+    if (!token) return null;
+    return db
+      .select()
+      .from(repoHooks)
+      .where(eq(repoHooks.ciTokenHash, sha256(token)))
+      .get();
+  }
+
+  /** The deployment a build id names, with the service and environment behind it. */
+  function buildFor(buildId: string) {
+    const deployment = db.select().from(deployments).where(eq(deployments.id, buildId)).get();
+    if (!deployment) return null;
+
+    const serviceEnv = db
+      .select()
+      .from(serviceEnvs)
+      .where(eq(serviceEnvs.id, deployment.serviceEnvId))
+      .get();
+    if (!serviceEnv) return null;
+
+    const service = db.select().from(services).where(eq(services.id, serviceEnv.serviceId)).get();
+    if (!service) return null;
+
+    return { deployment, serviceEnv, service };
+  }
+
+  // Values a bundler inlines have to exist during the build, and the build runs in
+  // GitHub, where the environment's variables do not. They travel over this
+  // callback channel — never the dispatch payload, which GitHub keeps — and only
+  // names matching BUILD_TIME_PREFIXES are ever returned.
+  app.get('/api/ci/build-env', (c) => {
+    const hook = hookForToken(c);
+    if (!hook) {
+      const { status, body } = apiError('unauthorised', 'Invalid CI token', 401);
+      return c.json(body, status);
+    }
+
+    const found = buildFor(c.req.query('buildId') ?? '');
+    if (!found) {
+      const { status, body } = apiError('not_found', 'No such build', 404);
+      return c.json(body, status);
+    }
+    if (found.service.repoFullName !== hook.repoFullName) {
+      const { status, body } = apiError('unauthorised', 'That build is not this repository', 401);
+      return c.json(body, status);
+    }
+
+    const key = deriveKey(config.secret);
+    const env: Record<string, string> = {};
+    for (const row of db
+      .select()
+      .from(variables)
+      .where(eq(variables.serviceEnvId, found.serviceEnv.id))
+      .all()) {
+      try {
+        env[row.key] = decrypt(row.valueEnc, key);
+      } catch {
+        // A value we cannot decrypt is skipped rather than failing the build: the
+        // deploy that follows will say NODOCK_SECRET is wrong, which is the root cause.
+      }
+    }
+
+    const vars = buildTimeVariables(env);
+    // Count, never values: this line is the only trace of a secret leaving nodock.
+    console.log(
+      `[nodock] build-env: ${Object.keys(vars).length} variables for ${found.deployment.id}`,
+    );
+    return c.json({ vars });
+  });
+
+  // Static output: uploaded during the build, validated before it is extracted, and
+  // then served by Caddy straight from disk. Nothing here starts a container.
+  app.put('/api/ci/artifact', async (c) => {
+    const hook = hookForToken(c);
+    if (!hook) {
+      const { status, body } = apiError('unauthorised', 'Invalid CI token', 401);
+      return c.json(body, status);
+    }
+
+    const buildId = c.req.query('buildId') ?? '';
+    const found = buildFor(buildId);
+    if (!found) {
+      const { status, body } = apiError('not_found', 'No such build', 404);
+      return c.json(body, status);
+    }
+    if (found.service.repoFullName !== hook.repoFullName) {
+      const { status, body } = apiError('unauthorised', 'That build is not this repository', 401);
+      return c.json(body, status);
+    }
+
+    const claimed = (c.req.header('x-artifact-sha256') ?? '').toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(claimed)) {
+      const { status, body } = apiError(
+        'artifact_sha256_required',
+        'X-Artifact-Sha256 must carry the hex SHA-256 of the body',
+        400,
+      );
+      return c.json(body, status);
+    }
+
+    const stream = c.req.raw.body;
+    if (!stream) {
+      const { status, body } = apiError('artifact_empty', 'The request had no body', 422);
+      return c.json(body, status);
+    }
+
+    const tarballPath = join(config.paths.uploadsDir, `${buildId}.tar.gz`);
+    const written = await writeUpload(stream, tarballPath);
+    if (!written.ok) {
+      const { status, body } = apiError(written.code, written.message, written.status);
+      return c.json(body, status);
+    }
+
+    if (written.sha256 !== claimed) {
+      rmSync(tarballPath, { force: true });
+      const { status, body } = apiError(
+        'artifact_hash_mismatch',
+        'The artifact arrived corrupted: its SHA-256 does not match the header',
+        422,
+      );
+      return c.json(body, status);
+    }
+
+    const extracted = extractArtifact({
+      dataDir: config.paths.dataDir,
+      uploadsDir: config.paths.uploadsDir,
+      artifactsDir: config.paths.artifactsDir,
+      deploymentId: buildId,
+      tarballPath,
+    });
+    rmSync(tarballPath, { force: true });
+
+    if (!extracted.ok) {
+      // Failed here rather than at deploy time: the build's own callback can only
+      // say "the build failed", and this message is the one that helps.
+      db.update(deployments)
+        .set({
+          status: 'failed',
+          error: extracted.message.slice(0, 500),
+          finishedAt: new Date(now()),
+        })
+        .where(eq(deployments.id, buildId))
+        .run();
+      const { status, body } = apiError(extracted.code, extracted.message, extracted.status);
+      return c.json(body, status);
+    }
+
+    db.update(deployments)
+      .set({
+        mode: 'artifact',
+        artifactPath: extracted.artifactPath,
+        artifactBytes: extracted.artifactBytes,
+      })
+      .where(eq(deployments.id, buildId))
+      .run();
+
+    return c.json({ ok: true, artifactBytes: extracted.artifactBytes }, 201);
+  });
+
   app.post('/api/ci/started', async (c) => {
     const auth = await authorisedRepo(c);
     if (!auth) {
@@ -577,10 +782,22 @@ export function registerCiCallbacks(app: Hono, deps: CiDeps): void {
 
     const failed = auth.payload.conclusion !== 'success';
 
+    // What the build delivered is a fact about the deployment, recorded before the
+    // pipeline runs so the panel never shows an image badge on a files-only deploy.
+    const built = {
+      ...(auth.payload.digest ? { imageDigest: auth.payload.digest } : {}),
+      ...(auth.payload.mode ? { mode: auth.payload.mode } : {}),
+      ...(auth.payload.framework ? { framework: auth.payload.framework } : {}),
+      ...(auth.payload.imageBytes === undefined ? {} : { imageBytes: auth.payload.imageBytes }),
+      ...(auth.payload.artifactBytes === undefined
+        ? {}
+        : { artifactBytes: auth.payload.artifactBytes }),
+    };
+
     const updated = db
       .update(deployments)
       .set({
-        ...(auth.payload.digest ? { imageDigest: auth.payload.digest } : {}),
+        ...built,
         ...(auth.payload.runUrl ? { ciRunUrl: auth.payload.runUrl } : {}),
         ...(failed
           ? {
@@ -601,8 +818,15 @@ export function registerCiCallbacks(app: Hono, deps: CiDeps): void {
 
     // A build that passed CI now gets pulled, run, health-checked and routed.
     // Deliberately not awaited: GitHub is waiting on this response, and a slow
-    // pull must not turn into a failed callback.
-    if (!failed && deps.docker) {
+    // pull must not turn into a failed callback. A deployment already failed by
+    // the artifact upload is left alone: its message is the useful one.
+    const current = db
+      .select({ status: deployments.status })
+      .from(deployments)
+      .where(eq(deployments.id, auth.payload.buildId))
+      .get();
+
+    if (!failed && deps.docker && current?.status !== 'failed') {
       void runDeployment(
         {
           config,

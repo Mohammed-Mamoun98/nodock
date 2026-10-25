@@ -53,6 +53,12 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
 
   const dirty = edits !== null;
 
+  // The prefixes come from the server, so the tag and the endpoint that selects
+  // variables for a build cannot disagree. No toggle: forgetting one is the bug.
+  const buildPrefixes = variables.data?.buildTimePrefixes ?? [];
+  const isBuildTime = (key: string) => buildPrefixes.some((prefix) => key.startsWith(prefix));
+  const anyBuildTime = rows.some((row) => isBuildTime(row.key));
+
   const pending = suggestions.data?.values ?? [];
   const picked = pending.filter((entry) => !unpicked.has(entry.key));
   const showSuggestions = !dismissed && picked.length > 0;
@@ -231,6 +237,13 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
         </div>
       ) : null}
 
+      {anyBuildTime ? (
+        <p className="border-b border-line bg-amber/5 px-4 py-1.5 font-mono text-mono-xs text-amber">
+          Values named {buildPrefixes.slice(0, 3).join(', ')} and friends are baked into the build,
+          where anyone who can load the site can read them.
+        </p>
+      ) : null}
+
       <div className="flex-1 overflow-y-auto">
         {variables.loading && rows.length === 0 ? (
           <p className="p-4 font-mono text-mono-xs text-text-dim">loading variables…</p>
@@ -271,6 +284,14 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
                 aria-label={`Name for ${row.key || 'variable'}`}
                 className="h-7 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 font-mono text-mono-xs focus-visible:border-lime"
               />
+              {isBuildTime(row.key) ? (
+                <span
+                  title="Inlined by the bundler at build time — visible in the artifact"
+                  className="shrink-0 rounded border border-amber/30 px-1 py-0.5 font-mono text-mono-xs text-amber"
+                >
+                  build
+                </span>
+              ) : null}
               <input
                 value={isRevealed ? row.value : MASK}
                 onChange={(event) =>

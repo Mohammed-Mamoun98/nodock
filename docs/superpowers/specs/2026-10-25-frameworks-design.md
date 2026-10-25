@@ -1,6 +1,6 @@
 # Deploying apps that have no Dockerfile
 
-Status: draft for review. Date: 2026-10-25.
+Status: implemented 2026-10-25 (`feat/frameworks`). Date: 2026-10-25. Deviations in §Conformance.
 
 ## Intent
 
@@ -453,3 +453,33 @@ and the panel says why.
 A non-matching variable needed at build time (say `SENTRY_AUTH_TOKEN` for source maps) has no
 path in v1. The shape would be a `variables.build_time` override that can only add to the prefix
 rule, never subtract — the tag and the warning already exist.
+
+## Conformance: what was built differently
+
+Recorded because each one is a decision, not an oversight:
+
+- **Railpack's frontend is referenced by tag, not digest.** nodock cannot resolve a digest when it
+  renders the workflow (a box with no registry access must still be able to write the file), and a
+  digest frozen into every new checkout would silently stop receiving Railpack's fixes. The tag is
+  one constant in `apps/server/src/ci/workflow.ts`, and changing it makes the panel report
+  `out_of_date` — the same re-sync path as any other template change.
+- **`services.spaFallback` exists.** "Editable per service" needs a column; the draft's data model
+  omitted it. `null` means "decided at create time from detection".
+- **`artifactPath` is stored relative to `DATA_DIR`** (`artifacts/<id>/site`) and rendered to
+  `/srv/artifacts/<id>/site` for Caddy. One stored form, one rendered form, one validator.
+- **Caddy mounts a dedicated `nodock_artifacts` volume at `/srv/artifacts:ro`**, rather than
+  bind-mounting `${DATA_DIR}/artifacts` from the host: an install may keep `/data` in a named
+  volume, where the draft's bind path does not exist. Same volume into nodock at
+  `/data/artifacts`.
+- **The 404 page is detected from the extracted files** (`existsSync(.../404.html)`) instead of
+  being reported by the build. The build does not need another field, and the check costs one
+  `stat` per static route.
+- **The doctor grew a `static artifacts` check** — "nodock can write the directory". The other
+  half (Caddy can read it) is not observable from inside the container, so the deploy proves it
+  and the failure message names the volume.
+- **No `imageBytes` for the dockerfile strategy.** `build-push-action` reports a digest but not a
+  size, and loading every Dockerfile image on the runner to measure it is not free. Next and
+  Railpack builds are loaded, measured and pushed, so those rows show a size.
+- **A failed artifact upload marks the deployment failed immediately.** GitHub's callback can only
+  say "the build failed"; the extraction error is the useful message, so it is written first and
+  the finished callback leaves a failed row alone.

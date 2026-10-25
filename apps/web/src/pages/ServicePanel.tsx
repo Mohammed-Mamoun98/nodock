@@ -12,6 +12,7 @@ import {
   type DeploymentRow,
 } from '../lib/api';
 import { deploymentStatusMeta, isDeploymentInFlight, stateMeta } from '../lib/status';
+import { deploymentSize } from '../lib/view';
 import { useAsync } from '../lib/useAsync';
 import { deriveState, relativeAge } from '../lib/view';
 import { navigate } from '../lib/router';
@@ -33,6 +34,18 @@ function triggerLabel(row: DeploymentRow): string {
     : row.trigger === 'rollback'
       ? 'via rollback'
       : 'via deploy';
+}
+
+/** What built this service: a Dockerfile, Next's own recipe, or files Caddy serves. */
+function StrategyBadge({ strategy }: { strategy: string }) {
+  const label =
+    strategy === 'static' ? 'files' : strategy === 'dockerfile' ? 'dockerfile' : strategy;
+
+  return (
+    <span className="rounded border border-line px-1.5 py-0.5 font-mono text-mono-xs text-text-dim">
+      {label}
+    </span>
+  );
 }
 
 /** One deployment card, Railway-style: subject line, provenance, and a status footer. */
@@ -58,6 +71,7 @@ function DeploymentCard({
   // knows, so this comes from the runtime sweep, not from the status column.
   const warning = active && row.status === 'live' ? row.runtimeWarning : null;
   const flapping = row.runtimeState === 'restarting';
+  const size = deploymentSize(row);
   const tone = warning
     ? flapping
       ? 'border-amber/20 bg-amber/5 text-amber'
@@ -86,6 +100,8 @@ function DeploymentCard({
           <span className="font-mono text-mono-xs text-text-dim">
             {row.commitSha?.slice(0, 7) ?? '—'} · {relativeAge(row.createdAt)} {triggerLabel(row)} ·{' '}
             {duration(row.startedAt, row.finishedAt)}
+            {size ? ` · ${size}` : ''}
+            {row.framework && row.framework !== 'dockerfile' ? ` · ${row.framework}` : ''}
           </span>
         </div>
 
@@ -151,9 +167,19 @@ function DeploymentCard({
                   ? 'replaced by a newer deployment'
                   : inFlight
                     ? `${chip.label}…`
-                    : 'live — the daemon reports the container running'}
+                    : row.mode === 'artifact'
+                      ? 'live — served from files by Caddy'
+                      : 'live — the daemon reports the container running'}
         </span>
       </div>
+
+      {/* Non-blocking: the app works, it is just ten times bigger than it needs to be. */}
+      {active && row.status === 'live' && row.framework === 'next-start' ? (
+        <p className="border-t border-amber/20 bg-amber/5 px-3 py-1.5 font-mono text-mono-xs text-amber">
+          This app ships a ~700 MB image. Add {`output: 'standalone'`} to next.config to get ~220
+          MB.
+        </p>
+      ) : null}
 
       {/* nodock's own deploy log: pull, start, health, switch. Build output is in Actions. */}
       {showLog ? (
@@ -223,6 +249,10 @@ export function ServicePanel({
           ciRunUrl: activeRow.ciRunUrl,
           error: activeRow.error,
           createdAt: activeRow.createdAt,
+          mode: activeRow.mode,
+          framework: activeRow.framework,
+          imageBytes: activeRow.imageBytes,
+          artifactBytes: activeRow.artifactBytes,
           runtimeState: activeRow.runtimeState,
           runtimeWarning: activeRow.runtimeWarning,
         }
@@ -316,6 +346,7 @@ export function ServicePanel({
           </div>
           <div className="flex items-center gap-2">
             <StatusWord label={meta.label} tone={meta.tone} inFlight={meta.inFlight} />
+            <StrategyBadge strategy={record.strategy} />
             <span className="font-mono text-mono-xs text-text-dim">
               {record.repoFullName}@{link?.branch ?? '—'}
             </span>

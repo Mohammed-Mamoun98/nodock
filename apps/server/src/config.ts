@@ -40,6 +40,15 @@ const envSchema = z.object({
    */
   CADDY_PROBE_URL: z.string().default(''),
   CADDY_ASK_URL: z.string().default('http://nodock:3000/internal/caddy/ask'),
+  /**
+   * Where Caddy sees the static artifacts volume. nodock writes to
+   * `DATA_DIR/artifacts`; Caddy mounts the same volume here. A path Caddy does
+   * not have is a deploy that fails at the switch, so the doctor checks it.
+   */
+  CADDY_ARTIFACTS_ROOT: z
+    .string()
+    .default('/srv/artifacts')
+    .refine((value) => value.startsWith('/') && !value.includes('..'), 'must be an absolute path'),
   /** Extra origins allowed to mutate (the Vite dev server, mainly). Same-origin is always allowed. */
   ALLOWED_ORIGINS: z.string().default(''),
   GHCR_USER: z.string().min(1).optional(),
@@ -62,6 +71,8 @@ export interface Config {
     adminSocket: string | null;
     probeUrl: string | null;
     askUrl: string;
+    /** Absolute path in Caddy's filesystem for the artifacts volume. */
+    artifactsRoot: string;
   };
   /** Normalised extra origins permitted to send mutating requests. */
   allowedOrigins: string[];
@@ -71,6 +82,8 @@ export interface Config {
     dbFile: string;
     logsDir: string;
     envDir: string;
+    artifactsDir: string;
+    uploadsDir: string;
     backupsDir: string;
     webDir: string;
   };
@@ -108,6 +121,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       adminSocket: e.CADDY_ADMIN_SOCKET || null,
       probeUrl: e.CADDY_PROBE_URL ? e.CADDY_PROBE_URL.replace(/\/$/, '') : null,
       askUrl: e.CADDY_ASK_URL,
+      artifactsRoot: e.CADDY_ARTIFACTS_ROOT.replace(/\/+$/, ''),
     },
     allowedOrigins: e.ALLOWED_ORIGINS.split(',')
       .map((value) => value.trim())
@@ -125,6 +139,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       dbFile: join(dataDir, 'nodock.db'),
       logsDir: join(dataDir, 'logs'),
       envDir: join(dataDir, 'env'),
+      // Static sites: extracted, immutable per deployment, served by Caddy.
+      artifactsDir: join(dataDir, 'artifacts'),
+      // Artifact uploads land here for the length of one request, then are gone.
+      uploadsDir: join(dataDir, 'uploads'),
       backupsDir: join(dataDir, 'backups'),
       // Built SPA, baked into the image; absent during pure-API dev.
       webDir: join(import.meta.dir, '../../web/dist'),

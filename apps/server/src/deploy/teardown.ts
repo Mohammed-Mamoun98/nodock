@@ -4,6 +4,7 @@ import { renderCurrentConfig } from '../caddy/service';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { deployments, serviceEnvs, services } from '../db/schema';
+import { removeArtifact } from './artifact';
 import type { DockerAdapter } from '../docker/adapter';
 
 export interface TeardownDeps {
@@ -37,6 +38,28 @@ export function containerNamesFor(db: Db, serviceEnvIds: string[]): string[] {
       rows.map((row) => row.containerName).filter((name): name is string => Boolean(name)),
     ),
   ];
+}
+
+/**
+ * Artifact directories belonging to these service envs, collected before the rows
+ * go for the same reason containers are: after the cascade there is no id to look
+ * them up by, and the database cannot delete files.
+ */
+export function artifactIdsFor(db: Db, serviceEnvIds: string[]): string[] {
+  if (serviceEnvIds.length === 0) return [];
+
+  return db
+    .select({ id: deployments.id, mode: deployments.mode })
+    .from(deployments)
+    .where(inArray(deployments.serviceEnvId, serviceEnvIds))
+    .all()
+    .filter((row) => row.mode === 'artifact')
+    .map((row) => row.id);
+}
+
+/** Removes the files a static deployment was serving. */
+export function removeArtifacts(artifactsDir: string, deploymentIds: string[]): void {
+  for (const id of deploymentIds) removeArtifact(artifactsDir, id);
 }
 
 /** Stops and removes containers, tolerating a missing daemon or already-gone boxes. */
