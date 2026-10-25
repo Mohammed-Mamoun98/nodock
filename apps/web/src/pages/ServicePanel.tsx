@@ -52,6 +52,16 @@ function DeploymentCard({
   const chip = deploymentStatusMeta[row.status];
   const inFlight = isDeploymentInFlight(row.status);
   const skipped = row.status === 'cancelled';
+  const superseded = row.status === 'superseded';
+  // The deploy worked; the container may still be dead or flapping. Only the daemon
+  // knows, so this comes from the runtime sweep, not from the status column.
+  const warning = active && row.status === 'live' ? row.runtimeWarning : null;
+  const flapping = row.runtimeState === 'restarting';
+  const tone = warning
+    ? flapping
+      ? 'border-amber/20 bg-amber/5 text-amber'
+      : 'border-red/20 bg-red/5 text-red'
+    : null;
 
   return (
     <div
@@ -62,7 +72,12 @@ function DeploymentCard({
       <div className="flex items-start justify-between gap-3 p-3">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex items-center gap-2">
-            <StatusChip label={active ? 'active' : chip.label} tone={active ? 'lime' : chip.tone} />
+            <StatusChip
+              label={
+                warning ? (flapping ? 'crash loop' : 'crashed') : active ? 'active' : chip.label
+              }
+              tone={warning ? (flapping ? 'amber' : 'red') : active ? 'lime' : chip.tone}
+            />
             <span className="truncate text-ui-sm text-text">
               {row.commitMessage ?? row.imageRef.split(':').pop() ?? 'deployment'}
             </span>
@@ -108,25 +123,34 @@ function DeploymentCard({
 
       <div
         className={`flex items-center gap-2 rounded-b-md border-t px-3 py-1.5 font-mono text-mono-xs ${
-          row.status === 'failed'
+          tone ??
+          (row.status === 'failed'
             ? 'border-red/20 bg-red/5 text-red'
-            : skipped
-              ? 'border-line bg-surface-2/30 text-text-dim'
-              : 'border-line bg-surface-2/30 text-text-dim'
+            : 'border-line bg-surface-2/30 text-text-dim')
         }`}
       >
         <Icon
-          name={row.status === 'failed' ? 'alert-triangle' : skipped ? 'pause' : 'check'}
+          name={
+            warning || row.status === 'failed'
+              ? 'alert-triangle'
+              : skipped || superseded
+                ? 'pause'
+                : 'check'
+          }
           className="h-3 w-3"
         />
         <span className="truncate">
-          {row.status === 'failed'
-            ? (row.error ?? 'deployment failed')
-            : skipped
-              ? (row.error ?? 'superseded by a newer deployment')
-              : inFlight
-                ? `${chip.label}…`
-                : 'Deployment successful'}
+          {warning
+            ? warning
+            : row.status === 'failed'
+              ? (row.error ?? 'deployment failed')
+              : skipped
+                ? (row.error ?? 'superseded by a newer deployment')
+                : superseded
+                  ? 'replaced by a newer deployment'
+                  : inFlight
+                    ? `${chip.label}…`
+                    : 'live — the daemon reports the container running'}
         </span>
       </div>
 
@@ -170,6 +194,10 @@ export function ServicePanel({
   const deployments = useAsync(() => listDeployments(serviceId), [serviceId], {
     pollMs: 3000,
     shouldPoll: (page) => isDeploymentInFlight(page?.deployments[0]?.status ?? ''),
+    // A live deployment is not "finished": its container can die or start flapping,
+    // and the panel must stop claiming it is live within a sweep or two.
+    recheckMs: 12_000,
+    recheckWhen: (page) => page?.deployments.some((row) => row.status === 'live') ?? false,
   });
 
   const rows = useMemo(() => deployments.data?.deployments ?? [], [deployments.data]);
@@ -191,6 +219,8 @@ export function ServicePanel({
           ciRunUrl: activeRow.ciRunUrl,
           error: activeRow.error,
           createdAt: activeRow.createdAt,
+          runtimeState: activeRow.runtimeState,
+          runtimeWarning: activeRow.runtimeWarning,
         }
       : null,
   );

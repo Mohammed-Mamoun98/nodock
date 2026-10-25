@@ -225,7 +225,15 @@ export async function runDeployment(
       return 'failed';
     }
 
-    setStatus('live', { finishedAt: new Date(now()) });
+    setStatus('live', {
+      finishedAt: new Date(now()),
+      // Known without asking: the health check just passed on this container.
+      runtimeState: 'running',
+      runtimeExitCode: null,
+      runtimeRestarts: 0,
+      runtimeOom: false,
+      runtimeCheckedAt: new Date(now()),
+    });
     log(deploymentId, 'live');
 
     // Draining, not killing: SIGTERM then a 15s grace so in-flight requests finish.
@@ -233,6 +241,20 @@ export async function runDeployment(
       await docker.stop(previous.containerName, 15).catch(() => {});
       await docker.remove(previous.containerName).catch(() => {});
     }
+
+    // Older `live` rows for this env are history now: this deployment is the one
+    // serving. Leaving them `live` is what made the panel list three green
+    // deployments and none of them the container actually behind the route.
+    db.update(deployments)
+      .set({ status: 'superseded', runtimeState: null, runtimeCheckedAt: null })
+      .where(
+        and(
+          eq(deployments.serviceEnvId, serviceEnv.id),
+          eq(deployments.status, 'live'),
+          ne(deployments.id, deploymentId),
+        ),
+      )
+      .run();
 
     if (admin) await reconcileClean(deps);
     return 'live';

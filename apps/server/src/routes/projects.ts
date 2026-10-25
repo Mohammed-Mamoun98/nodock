@@ -15,6 +15,7 @@ import {
 } from '../deploy/teardown';
 import type { GitHubClient } from '../auth/github';
 import { deployments, environments, projects, serviceEnvs, services } from '../db/schema';
+import { runtimeWarning } from '../deploy/runtime';
 import { apiError, validationError } from '../http';
 import { slugify, uniqueValue } from '../lib/slug';
 
@@ -177,6 +178,9 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
                     ciRunUrl: latest.ciRunUrl,
                     error: latest.error,
                     createdAt: iso(latest.createdAt),
+                    // A card must be able to say "crashed", not "live".
+                    runtimeState: latest.runtimeState,
+                    runtimeWarning: runtimeWarning(latest),
                   }
                 : null,
             };

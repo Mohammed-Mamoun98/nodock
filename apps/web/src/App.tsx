@@ -82,6 +82,12 @@ export default function App() {
             env.latestDeployment ? isDeploymentInFlight(env.latestDeployment.status) : false,
           ),
         ) ?? false,
+      // Nothing in flight, but a card that says "live" can still turn into a crash.
+      recheckMs: 15_000,
+      recheckWhen: (page) =>
+        page?.services.some((service) =>
+          service.serviceEnvs.some((env) => env.latestDeployment?.status === 'live'),
+        ) ?? false,
     },
   );
 

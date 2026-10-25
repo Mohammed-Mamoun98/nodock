@@ -14,6 +14,7 @@ import {
 } from '../deploy/teardown';
 import type { GitHubClient } from '../auth/github';
 import { deployments, environments, serviceEnvs, services } from '../db/schema';
+import { runtimeWarning } from '../deploy/runtime';
 import { apiError, validationError } from '../http';
 import {
   branch,
@@ -328,6 +329,14 @@ export function registerServiceRoutes(app: Hono, deps: ServiceDeps): void {
         createdAt: iso(row.createdAt),
         startedAt: iso(row.startedAt),
         finishedAt: iso(row.finishedAt),
+        // What the daemon says about the container, and the sentence that goes with
+        // it — computed here so every client tells the same story.
+        runtimeState: row.runtimeState,
+        runtimeExitCode: row.runtimeExitCode,
+        runtimeRestarts: row.runtimeRestarts,
+        runtimeOom: row.runtimeOom,
+        runtimeCheckedAt: iso(row.runtimeCheckedAt),
+        runtimeWarning: runtimeWarning(row),
       })),
     });
   });

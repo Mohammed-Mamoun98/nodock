@@ -126,5 +126,7 @@ export function createDeployLogs(dir: string): DeployLogs {
 
 /** Terminal states: nothing more will ever be written to that log. */
 export function isTerminalStatus(status: string): boolean {
-  return status === 'live' || status === 'failed' || status === 'cancelled';
+  return (
+    status === 'live' || status === 'failed' || status === 'cancelled' || status === 'superseded'
+  );
 }
