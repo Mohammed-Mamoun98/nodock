@@ -20,6 +20,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A docs/ branch carries a design document; the code that document describes
+      # belongs on the feature branch. Mixing the two makes the doc PR fail typecheck
+      # against server code that never came along — which reads like a real bug and
+      # costs a round trip to diagnose. Cheaper to say so here.
+      - name: Docs branches stay docs
+        if: startsWith(github.head_ref, 'docs/')
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          changed=$(git diff --name-only FETCH_HEAD HEAD)
+          code=$(printf '%s\n' "$changed" | grep -vE '\.md$' || true)
+          if [ -n "$code" ]; then
+            echo "A docs/ branch may only change Markdown. These belong on the code branch:"
+            printf '%s\n' "$code"
+            exit 1
+          fi
+          echo "Only documentation changed."
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.4
