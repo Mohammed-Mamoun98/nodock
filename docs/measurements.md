@@ -1,6 +1,6 @@
 # Measurements
 
-Budgets live in the plan (`i-wanna-build-sth-compiled-clock.md` → _Resource budgets_).
+Budgets live in the plan (`v0-plan.md` → _Resource budgets_).
 Every row records where it was taken, because a laptop number is not a VPS number.
 
 ## M1 — scaffold (2026-10-24, macOS arm64, Bun 1.4.2)
