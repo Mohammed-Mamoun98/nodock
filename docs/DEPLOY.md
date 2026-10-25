@@ -63,7 +63,8 @@ Manual, on the box:
 ```
 
 Two guards worth knowing: the SSH step refuses to deploy when the checkout on the box has
-uncommitted changes, and it `git reset --hard`s to the exact commit the image was built from.
+uncommitted changes, and it checks the box out **detached** at the exact commit the image was
+built from (so it never moves a branch you are working on; `git checkout main` to get back).
 If you would rather ship on tags than on every merge, change `on.push.branches` in
 `deploy.yml` to `on.push.tags: ['v*']`.
 
