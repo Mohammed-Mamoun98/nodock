@@ -60,12 +60,12 @@ The user keeps the escape hatch they have now: a repo with a Dockerfile still wi
 
 One column on `services`, `strategy`:
 
-| Value        | Chosen when                                 | Output                     | Runtime          |
-| ------------ | ------------------------------------------- | -------------------------- | ---------------- |
-| `dockerfile` | repo has a Dockerfile, or the user picks it | image (as today)           | 1 container      |
-| `next`       | `next` in dependencies                      | image, or artifact if SPA  | 1 container / 0  |
-| `static`     | Vite, Astro, CRA, generic `dist`            | artifact                   | 0 containers     |
-| `railpack`   | anything else                               | image                      | 1 container      |
+| Value        | Chosen when                                 | Output                    | Runtime         |
+| ------------ | ------------------------------------------- | ------------------------- | --------------- |
+| `dockerfile` | repo has a Dockerfile, or the user picks it | image (as today)          | 1 container     |
+| `next`       | `next` in dependencies                      | image, or artifact if SPA | 1 container / 0 |
+| `static`     | Vite, Astro, CRA, generic `dist`            | artifact                  | 0 containers    |
+| `railpack`   | anything else                               | image                     | 1 container     |
 
 `strategy` defaults to `dockerfile`, so every existing service keeps behaving exactly as it does
 now and the migration is a no-op.
@@ -300,7 +300,9 @@ strategy: text('strategy', { enum: ['dockerfile', 'next', 'static', 'railpack'] 
 outputDir: text('output_dir'); // static only; null means "recipe default"
 
 // deployments
-mode: text('mode', { enum: ['image', 'artifact'] }).notNull().default('image');
+mode: text('mode', { enum: ['image', 'artifact'] })
+  .notNull()
+  .default('image');
 framework: text('framework'); // 'next', 'go', 'vite', … as reported by the build
 artifactPath: text('artifact_path');
 artifactBytes: integer('artifact_bytes');
@@ -375,15 +377,15 @@ Dispatch is refused with `workflow_out_of_date` when `strategy != 'dockerfile'` 
 
 ## Failure and advisory matrix
 
-| Situation                          | Result                                             |
-| ---------------------------------- | -------------------------------------------------- |
-| no Dockerfile, unknown framework   | Railpack tries; its error is shown verbatim        |
-| Next without `standalone`          | builds `next start`; amber advisory, not a failure |
+| Situation                           | Result                                             |
+| ----------------------------------- | -------------------------------------------------- |
+| no Dockerfile, unknown framework    | Railpack tries; its error is shown verbatim        |
+| Next without `standalone`           | builds `next start`; amber advisory, not a failure |
 | `out/` missing after a static build | build fails: "build produced no `dist/`"           |
-| artifact over cap                  | build fails at upload with the limit named         |
-| artifact has `..` or symlinks      | build fails; nothing written                       |
-| Caddy missing the artifacts mount  | deploy fails at prepare; `doctor` reports it       |
-| v1 workflow + non-docker strategy  | dispatch refused, panel offers re-sync             |
+| artifact over cap                   | build fails at upload with the limit named         |
+| artifact has `..` or symlinks       | build fails; nothing written                       |
+| Caddy missing the artifacts mount   | deploy fails at prepare; `doctor` reports it       |
+| v1 workflow + non-docker strategy   | dispatch refused, panel offers re-sync             |
 
 ## Security
 
