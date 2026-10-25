@@ -11,7 +11,7 @@
     "dev:web": "bun run --cwd apps/web dev",
     "start:server": "bun --smol apps/server/src/index.ts",
     "build:web": "bun run --cwd apps/web build",
-    "smoke:web": "bun run build:web && bun scripts/smoke-web.ts && SMOKE_ANONYMOUS=1 bun scripts/smoke-web.ts && SMOKE_CRASHED=1 bun scripts/smoke-web.ts",
+    "smoke:web": "bun run build:web && bun scripts/smoke-web.ts && SMOKE_ANONYMOUS=1 bun scripts/smoke-web.ts && SMOKE_CRASHED=1 bun scripts/smoke-web.ts && SMOKE_VARIABLES=1 bun scripts/smoke-web.ts",
     "check:secrets": "bash scripts/check-secrets.sh --all",
     "doctor": "bun scripts/doctor.ts",
     "lint": "oxlint",

@@ -177,14 +177,17 @@ function DeploymentCard({
 export function ServicePanel({
   serviceId,
   activeEnvId,
+  initialTab = 'Deployments',
   onClose,
 }: {
   serviceId: string;
   /** Environment chosen in the top bar; falls back to the service's first env. */
   activeEnvId?: string | null;
+  /** `#/services/:id/variables` opens straight onto its own tab, not the default one. */
+  initialTab?: Tab;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>('Deployments');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [hideSkipped, setHideSkipped] = useState(true);

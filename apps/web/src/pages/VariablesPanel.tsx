@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Button } from '../components/ui';
-import { ApiError, getVariables, saveVariables } from '../lib/api';
+import { ApiError, getVariableSuggestions, getVariables, saveVariables } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 
 interface Draft {
@@ -20,6 +20,16 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
     [serviceId, envId],
   );
 
+  // What the repo asks for. Names only: a template's values are placeholders, so the rows
+  // this produces arrive empty and the user supplies the real value.
+  const suggestions = useAsync(
+    () =>
+      envId
+        ? getVariableSuggestions(serviceId, envId)
+        : Promise.resolve({ source: null, values: [], note: null }),
+    [serviceId, envId],
+  );
+
   const [edits, setEdits] = useState<Draft[] | null>(null);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
@@ -28,6 +38,8 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [unpicked, setUnpicked] = useState<Set<string>>(new Set());
 
   const rows: Draft[] = useMemo(() => {
     if (edits) return edits;
@@ -40,6 +52,10 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
   }, [edits, variables.data]);
 
   const dirty = edits !== null;
+
+  const pending = suggestions.data?.values ?? [];
+  const picked = pending.filter((entry) => !unpicked.has(entry.key));
+  const showSuggestions = !dismissed && picked.length > 0;
 
   function mutate(next: Draft[]) {
     setEdits(next);
@@ -55,6 +71,22 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
     setNewKey('');
     setNewValue('');
     setAdding(false);
+  }
+
+  /** Ticked names land in the list with empty values, unsaved — filling them in is the user's job. */
+  function addSuggestions() {
+    const existing = new Set(rows.map((row) => row.key));
+    const added = picked
+      .filter((entry) => !existing.has(entry.key))
+      .map((entry) => ({
+        id: `suggested-${entry.key}`,
+        key: entry.key,
+        value: '',
+        isSecret: entry.isSecret,
+      }));
+    if (added.length > 0) mutate([...rows, ...added]);
+    setDismissed(true);
+    setUnpicked(new Set());
   }
 
   async function save() {
@@ -76,6 +108,8 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
       setSavedAt(new Date().toLocaleTimeString());
       setEdits(null);
       variables.reload();
+      // Whatever is still unset keeps being offered, so ask the repo again.
+      suggestions.reload();
     } catch (cause) {
       setError(cause instanceof ApiError ? `${cause.code} · ${cause.message}` : String(cause));
     } finally {
@@ -129,7 +163,12 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
         ) : (
           <div className="flex items-center justify-between">
             <span className="font-mono text-mono-xs text-text-dim">{rows.length} variables</span>
-            <Button onClick={() => setAdding(true)}>+ Add variable</Button>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" onClick={suggestions.reload} disabled={suggestions.loading}>
+                Scan repo
+              </Button>
+              <Button onClick={() => setAdding(true)}>+ Add variable</Button>
+            </div>
           </div>
         )}
 
@@ -139,6 +178,58 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
           </p>
         ) : null}
       </div>
+
+      {showSuggestions ? (
+        <div className="border-b border-line bg-lime/5 px-4 py-3">
+          <p className="mb-2 text-ui-sm">
+            <span className="font-mono text-mono-xs text-text-dim">
+              {suggestions.data?.source ?? 'the repo'}
+            </span>{' '}
+            asks for {picked.length} variable{picked.length === 1 ? '' : 's'} you have not set.
+          </p>
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {pending.map((entry) => {
+              const on = !unpicked.has(entry.key);
+              return (
+                <label
+                  key={entry.key}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 font-mono text-mono-xs ${
+                    on ? 'border-line bg-surface-2' : 'border-line/50 text-text-dim'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    aria-label={`Add ${entry.key}`}
+                    onChange={() =>
+                      setUnpicked((current) => {
+                        const next = new Set(current);
+                        if (next.has(entry.key)) next.delete(entry.key);
+                        else next.add(entry.key);
+                        return next;
+                      })
+                    }
+                  />
+                  {entry.key}
+                  {entry.isSecret ? <span className="text-amber">secret</span> : null}
+                  {entry.comment ? <span className="text-text-dim">· {entry.comment}</span> : null}
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="primary" onClick={addSuggestions} disabled={picked.length === 0}>
+              Add {picked.length}
+            </Button>
+            <Button variant="ghost" onClick={() => setDismissed(true)}>
+              Not now
+            </Button>
+            <span className="font-mono text-mono-xs text-text-dim">
+              names only — values stay empty until you fill them in
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex-1 overflow-y-auto">
         {variables.loading && rows.length === 0 ? (
@@ -152,6 +243,9 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
               <p className="text-ui-sm text-text-dim">
                 Add whatever the app needs to boot — DATABASE_URL, secrets, feature flags.
               </p>
+              {suggestions.data?.note ? (
+                <p className="mt-2 font-mono text-mono-xs text-text-dim">{suggestions.data.note}</p>
+              ) : null}
             </div>
           </div>
         ) : null}

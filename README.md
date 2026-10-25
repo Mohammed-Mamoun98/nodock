@@ -25,6 +25,9 @@ reports what the container is actually doing.
   again — same pull → run → health → switch path, no rebuild, no GitHub. It uses today's
   variables, so this is code rollback, not config rollback.
 - **Variables per environment**, encrypted at rest with AES-256-GCM under `NODOCK_SECRET`.
+  The repo's `.env.example` (or `.env.sample` / `.env.template`) is read for the names it
+  asks for, and the panel offers the ones you have not set — names only, since a
+  placeholder value in a template is not a secret and not a default.
 - **An HTTPS URL per environment** under `BASE_DOMAIN`, with automatic certificates. A custom
   domain column is modelled and served by Caddy; the panel has no editor for it yet.
 - **Install and upgrade from an image**, with the panel auto-deployed from `main` by CI
