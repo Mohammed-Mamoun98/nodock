@@ -55,6 +55,10 @@ function harness(running: string) {
         STUB_STATE: state,
         STATE_DIR: join(dir, 'state'),
         HEALTH_ATTEMPTS: '1',
+        // Keep the test hermetic: the repo's own .env has real registry credentials.
+        ENV_FILE: '/dev/null',
+        GHCR_USER: '',
+        GHCR_TOKEN: '',
         ...extraEnv,
       },
       stdout: 'pipe',
@@ -126,6 +130,19 @@ describe('self-update', () => {
     expect(h.running()).toBe('nodock:dev');
     // A local image has nothing to pull.
     expect(h.calls()).not.toContain('pull nodock');
+  });
+
+  test('logs in to the registry with the credentials from .env when the shell has none', () => {
+    const h = harness(`${TAG_PREFIX}sha-good000`);
+    const envFile = join(h.dir, 'deploy.env');
+    writeFileSync(envFile, 'GHCR_USER=mo\nGHCR_TOKEN=ghp_secret\n');
+
+    const result = h.run(['sha-next00'], { ENV_FILE: envFile });
+
+    expect(result.exitCode).toBe(0);
+    expect(h.calls()).toContain('docker login ghcr.io --username mo --password-stdin');
+    // The token goes in over stdin, never as an argument.
+    expect(h.calls()).not.toContain('ghp_secret');
   });
 
   test('refuses to roll back when it has no record of a previous image', () => {
