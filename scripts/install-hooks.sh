@@ -21,3 +21,9 @@ fi
 chmod +x .githooks/* 2>/dev/null || true
 git config core.hooksPath .githooks
 echo "git hooks enabled: core.hooksPath = .githooks"
+
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "hooks: secret scan enabled (gitleaks found)"
+else
+  echo "hooks: gitleaks not found, commits will skip the secret scan"
+fi

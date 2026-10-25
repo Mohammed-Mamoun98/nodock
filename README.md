@@ -100,8 +100,15 @@ bun run build:web             # then the server serves apps/web/dist
 ```
 
 `bun install` enables the committed git hook (`core.hooksPath = .githooks`). The pre-commit
-hook formats and lints only staged files, re-stages what oxfmt rewrote, and blocks the commit
-on a lint error. `git commit --no-verify` skips it; run `bun run verify` before pushing.
+hook scans staged changes for secrets, then formats and lints only those files, re-staging what
+oxfmt rewrote, and blocks the commit on a leak or a lint error. `git commit --no-verify` skips
+it; run `bun run verify` before pushing.
+
+The secret scan is [gitleaks](https://github.com/gitleaks/gitleaks) driving `scripts/check-secrets.sh`
+(`brew install gitleaks`). It is deliberately optional: with no binary on `PATH` the scan prints a
+skip notice and lets the commit through, because the Docker build runs the same lifecycle scripts
+where gitleaks does not exist. `bun run check:secrets` sweeps the whole tree by hand.
+Because the check lives only in the hook, `--no-verify` is a real hole — nothing else repeats it.
 
 `.env` lives in the **repo root** and Bun only loads it from the process working directory.
 The root scripts run from the root for that reason; if you invoke the server directly, use

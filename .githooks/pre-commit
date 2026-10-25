@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Fast pre-commit: format + lint only the files in this commit.
+# Fast pre-commit: secret scan + format + lint only the files in this commit.
 # Bypass with `git commit --no-verify` (CI still runs the full `bun run verify`).
 set -e
+
+# First, before anything is rewritten in the working tree on the way to a commit
+# that would never happen. Skips itself when gitleaks is not installed.
+sh scripts/check-secrets.sh --staged
 
 files=()
 while IFS= read -r -d '' file; do
