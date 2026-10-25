@@ -3,7 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { createApp } from '../src/app';
 import { sealSecret as _sealSecret } from '../src/ci/sealed-box';
-import { imageRef, renderWorkflow } from '../src/ci/workflow';
+import {
+  imageRef,
+  renderWorkflow,
+  WORKFLOW_VERSION,
+  workflowSupportsStrategy,
+} from '../src/ci/workflow';
 import { SESSION_COOKIE } from '../src/auth/sessions';
 import { loadConfig } from '../src/config';
 import {
@@ -161,14 +166,40 @@ describe('workflow', () => {
   test('bakes the nodock URL in and uses the pinned action versions', () => {
     const workflow = renderWorkflow('https://panel.example.com/');
 
-    expect(workflow).toContain('https://panel.example.com/api/ci/started');
-    expect(workflow).toContain('https://panel.example.com/api/ci/finished');
+    // The panel address is the one that wrote the file: every callback goes home.
+    expect(workflow).toContain('NODOCK_URL: "https://panel.example.com"');
+    expect(workflow).toContain('/api/ci/started');
+    expect(workflow).toContain('/api/ci/finished');
     expect(workflow).not.toContain('panel.example.com//api');
     expect(workflow).toContain('types: [nodock-build]');
     expect(workflow).toContain('packages: write');
     expect(workflow).toContain('secrets.NODOCK_CI_TOKEN');
     expect(workflow).toContain('if: always()');
     expect(workflow).toContain('--retry 3');
+  });
+
+  test('carries every strategy, and the artifact upload for the static ones', () => {
+    const workflow = renderWorkflow('https://panel.example.com');
+
+    expect(workflow).toContain("strategy == 'dockerfile'");
+    expect(workflow).toContain("strategy == 'next'");
+    expect(workflow).toContain("strategy == 'static'");
+    expect(workflow).toContain("strategy == 'railpack'");
+    expect(workflow).toContain('/api/ci/artifact?buildId=');
+    expect(workflow).toContain('/api/ci/build-env?buildId=');
+    // The two Next variants, and the advisory that is the only difference between them.
+    expect(workflow).toContain('.next/standalone/server.js');
+    expect(workflow).toContain("output: 'standalone'");
+    expect(workflow).toContain('BUILDKIT_SYNTAX=');
+  });
+
+  test('a workflow version gates the strategies a repo can be sent', () => {
+    expect(workflowSupportsStrategy(1, 'dockerfile')).toBe(true);
+    expect(workflowSupportsStrategy(null, 'dockerfile')).toBe(true);
+    expect(workflowSupportsStrategy(1, 'next')).toBe(false);
+    expect(workflowSupportsStrategy(1, 'static')).toBe(false);
+    expect(workflowSupportsStrategy(2, 'railpack')).toBe(true);
+    expect(WORKFLOW_VERSION).toBe(2);
   });
 
   test('image refs are lowercased and tag per service+commit', () => {
@@ -341,8 +372,11 @@ describe('deploy dispatch', () => {
       dockerfile: 'Dockerfile',
       context: '.',
       serviceSlug: 'api',
+      strategy: 'dockerfile',
+      outputDir: '',
     });
-    expect(Object.keys(dispatched?.payload ?? {})).toHaveLength(7);
+    // GitHub refuses a dispatch payload with more than ten keys.
+    expect(Object.keys(dispatched?.payload ?? {})).toHaveLength(9);
   });
 
   test('marks the deployment failed when the dispatch itself fails', async () => {

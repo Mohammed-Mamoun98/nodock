@@ -63,7 +63,9 @@ export async function sweepRuntime(
     .from(deployments)
     .where(eq(deployments.status, 'live'))
     .all()
-    .filter((row) => Boolean(row.containerName))
+    // A static deployment has no container: `missing` there would be an outage we
+    // invented, not one we found.
+    .filter((row) => row.mode !== 'artifact' && Boolean(row.containerName))
     .slice(0, MAX_INSPECTS);
 
   const changed: RuntimeChange[] = [];

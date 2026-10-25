@@ -91,3 +91,17 @@ export function toServiceView(service: ServiceSummary): ServiceView {
     runUrl: latest?.ciRunUrl ?? null,
   };
 }
+
+/** `218 MB image` / `12.4 MB files` — the size of what a build actually delivered. */
+export function deploymentSize(row: {
+  mode?: string;
+  imageBytes?: number | null;
+  artifactBytes?: number | null;
+}): string | null {
+  const bytes = row.mode === 'artifact' ? row.artifactBytes : row.imageBytes;
+  if (!bytes || bytes <= 0) return null;
+  const unit = row.mode === 'artifact' ? 'files' : 'image';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB ${unit}`;
+  const mb = bytes / 1024 / 1024;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB ${unit}`;
+}

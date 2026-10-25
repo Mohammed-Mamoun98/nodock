@@ -7,6 +7,7 @@ import { decrypt, deriveKey, encrypt } from '../auth/crypto';
 import type { GitHubClient } from '../auth/github';
 import { readSessionToken } from '../auth/session-token';
 import { apiError, validationError } from '../http';
+import { BUILD_TIME_PREFIXES } from '../lib/framework';
 import { findEnvFiles, looksSecret, parseEnvKeys } from '../lib/env-example';
 import { findServiceEnv } from './services';
 import { variableListSchema } from './schemas';
@@ -138,6 +139,9 @@ export function registerVariableRoutes(app: Hono, deps: VariableDeps): void {
     const rows = db.select().from(variables).where(eq(variables.serviceEnvId, serviceEnv.id)).all();
 
     return c.json({
+      // Shipped with the list so the panel tags rows with the same rule the build
+      // endpoint selects them by: one constant, two readers, no drift.
+      buildTimePrefixes: [...BUILD_TIME_PREFIXES],
       variables: rows.map((row) => {
         const isSecret = row.isSecret;
         const plaintext = reveal ? decrypt(row.valueEnc, key) : null;

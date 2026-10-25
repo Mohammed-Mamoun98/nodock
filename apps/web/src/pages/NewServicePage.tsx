@@ -31,6 +31,8 @@ export function NewServicePage({ projectId }: { projectId: string }) {
   const [dockerfileOverride, setDockerfileOverride] = useState<string | null>(null);
   const [contextOverride, setContextOverride] = useState<string | null>(null);
   const [portOverride, setPortOverride] = useState<string | null>(null);
+  const [strategyOverride, setStrategyOverride] = useState<'auto' | 'dockerfile'>('auto');
+  const [outputDirOverride, setOutputDirOverride] = useState<string | null>(null);
   /** null = follow detection: on while CI is missing, off once it is enabled. */
   const [ciChoice, setCiChoice] = useState<boolean | null>(null);
 
@@ -65,13 +67,22 @@ export function NewServicePage({ projectId }: { projectId: string }) {
     dockerfilePath.startsWith('../') ||
     (contextPath !== '.' && !dockerfilePath.startsWith(`${contextPath}/`));
 
+  // What the repo looked like, and therefore what the build will do with it. The
+  // Dockerfile stays available: detection is a suggestion, never a gate.
+  const detected = detection?.detection ?? null;
+  const strategy =
+    strategyOverride === 'dockerfile' ? 'dockerfile' : (detected?.strategy ?? 'dockerfile');
+  const isDockerfile = strategy === 'dockerfile';
+  const needsOutputDir = detected?.outputDir !== null && detected?.outputDir !== undefined;
+  const outputDir =
+    outputDirOverride ?? detected?.outputDir ?? (strategy === 'static' ? 'dist' : '');
   const noDockerfile = detection !== null && !detection.hasDockerfile;
+
   const canSubmit =
     Boolean(selected) &&
     name.trim().length > 0 &&
     branch.trim().length > 0 &&
-    !outsideContext &&
-    !noDockerfile &&
+    (isDockerfile ? !outsideContext : true) &&
     !inspection.loading &&
     !submitting;
 
@@ -81,6 +92,8 @@ export function NewServicePage({ projectId }: { projectId: string }) {
     setDockerfileOverride(null);
     setContextOverride(null);
     setPortOverride(null);
+    setStrategyOverride('auto');
+    setOutputDirOverride(null);
     if (!name.trim()) setName(option.name);
   }
 
@@ -97,6 +110,9 @@ export function NewServicePage({ projectId }: { projectId: string }) {
         dockerfilePath,
         contextPath,
         containerPort: Number(containerPort) || undefined,
+        strategy,
+        outputDir: needsOutputDir ? outputDir : null,
+        spaFallback: detected?.spaFallback ?? null,
       });
 
       // Enable CI here rather than making the operator find the panel later. A
@@ -214,15 +230,13 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                     <span className="text-red">inspect failed · {inspection.error.message}</span>
                   ) : null}
 
-                  {noDockerfile ? (
+                  {noDockerfile && detected ? (
                     <div className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1.5 text-red">
-                        <Icon name="alert-triangle" className="h-3 w-3" />
-                        no Dockerfile in this repository
+                      <span className="flex items-center gap-1.5 text-lime">
+                        <Icon name="check" className="h-3 w-3" />
+                        no Dockerfile needed
                       </span>
-                      <span className="text-text-dim">
-                        nodock builds with a Dockerfile. Add one, or pick another repository.
-                      </span>
+                      <span className="text-text-dim">{detected.label}</span>
                     </div>
                   ) : null}
 
@@ -273,46 +287,114 @@ export function NewServicePage({ projectId }: { projectId: string }) {
               </div>
 
               <div>
-                <label htmlFor="dockerfile-path" className="mb-2 block text-ui-sm">
-                  Dockerfile path
+                <label htmlFor="strategy" className="mb-2 block text-ui-sm">
+                  Build
                 </label>
-                <input
-                  id="dockerfile-path"
-                  value={dockerfilePath}
-                  onChange={(event) => setDockerfileOverride(event.target.value)}
-                  className={`h-8 w-full rounded-md border bg-surface-2 px-3 font-mono text-ui-sm ${
-                    outsideContext ? 'border-amber/50' : 'border-line'
-                  }`}
-                />
-                <div className="mt-2 flex items-start gap-1.5">
-                  <Icon
-                    name="alert-triangle"
-                    className={`mt-0.5 ${outsideContext ? 'text-amber' : 'text-text-dim'}`}
-                  />
-                  <p
-                    className={`font-mono text-mono-xs leading-relaxed ${
-                      outsideContext ? 'text-amber' : 'text-text-dim'
-                    }`}
-                  >
-                    {outsideContext
-                      ? 'A Dockerfile outside the context directory will be rejected by docker build.'
-                      : 'Prefilled from the repository. Must live inside the build context below.'}
-                  </p>
-                </div>
+                <select
+                  id="strategy"
+                  value={strategyOverride === 'dockerfile' ? 'dockerfile' : 'auto'}
+                  onChange={(event) => {
+                    setStrategyOverride(
+                      event.target.value === 'dockerfile' ? 'dockerfile' : 'auto',
+                    );
+                    setDockerfileOverride(null);
+                  }}
+                  disabled={!selected}
+                  className="h-8 w-full rounded-md border border-line bg-surface-2 px-2 font-mono text-ui-sm disabled:opacity-50"
+                >
+                  <option value="auto">
+                    Auto — {detected ? detected.label : 'decide from the repository'}
+                  </option>
+                  <option value="dockerfile">Dockerfile — build it myself</option>
+                </select>
+                <p className="mt-2 font-mono text-mono-xs leading-relaxed text-text-dim">
+                  {isDockerfile
+                    ? 'The build uses this Dockerfile. Nothing else is guessed.'
+                    : strategy === 'static'
+                      ? 'The build produces files and Caddy serves them. No container, no port.'
+                      : 'The build runs in GitHub Actions and reports what it produced.'}
+                </p>
               </div>
 
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label htmlFor="context-path" className="mb-2 block text-ui-sm">
-                    Context path
-                  </label>
-                  <input
-                    id="context-path"
-                    value={contextPath}
-                    onChange={(event) => setContextOverride(event.target.value)}
-                    className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
-                  />
+              {isDockerfile ? (
+                <>
+                  <div>
+                    <label htmlFor="dockerfile-path" className="mb-2 block text-ui-sm">
+                      Dockerfile path
+                    </label>
+                    <input
+                      id="dockerfile-path"
+                      value={dockerfilePath}
+                      onChange={(event) => setDockerfileOverride(event.target.value)}
+                      className={`h-8 w-full rounded-md border bg-surface-2 px-3 font-mono text-ui-sm ${
+                        outsideContext ? 'border-amber/50' : 'border-line'
+                      }`}
+                    />
+                    <div className="mt-2 flex items-start gap-1.5">
+                      <Icon
+                        name="alert-triangle"
+                        className={`mt-0.5 ${outsideContext ? 'text-amber' : 'text-text-dim'}`}
+                      />
+                      <p
+                        className={`font-mono text-mono-xs leading-relaxed ${
+                          outsideContext ? 'text-amber' : 'text-text-dim'
+                        }`}
+                      >
+                        {outsideContext
+                          ? 'A Dockerfile outside the context directory will be rejected by docker build.'
+                          : 'Prefilled from the repository. Must live inside the build context below.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label htmlFor="context-path" className="mb-2 block text-ui-sm">
+                        Context path
+                      </label>
+                      <input
+                        id="context-path"
+                        value={contextPath}
+                        onChange={(event) => setContextOverride(event.target.value)}
+                        className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                      />
+                    </div>
+                    <div className="w-[140px]">
+                      <label htmlFor="container-port" className="mb-2 block text-ui-sm">
+                        Container port
+                      </label>
+                      <input
+                        id="container-port"
+                        value={containerPort}
+                        onChange={(event) => setPortOverride(event.target.value)}
+                        className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                      />
+                    </div>
+                  </div>
+                  <p className="-mt-3 font-mono text-mono-xs text-text-dim">
+                    {detection?.suggestedPort
+                      ? 'from EXPOSE in the Dockerfile — must be the port the process binds to 0.0.0.0'
+                      : 'the port your app listens on inside the container (default 3000)'}
+                  </p>
+                </>
+              ) : needsOutputDir ? (
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label htmlFor="output-dir" className="mb-2 block text-ui-sm">
+                      Output directory
+                    </label>
+                    <input
+                      id="output-dir"
+                      value={outputDir}
+                      onChange={(event) => setOutputDirOverride(event.target.value)}
+                      className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                    />
+                    <p className="mt-2 font-mono text-mono-xs text-text-dim">
+                      the build fails if it produces nothing here
+                    </p>
+                  </div>
                 </div>
+              ) : (
                 <div className="w-[140px]">
                   <label htmlFor="container-port" className="mb-2 block text-ui-sm">
                     Container port
@@ -324,12 +406,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                     className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                   />
                 </div>
-              </div>
-              <p className="-mt-3 font-mono text-mono-xs text-text-dim">
-                {detection?.suggestedPort
-                  ? 'from EXPOSE in the Dockerfile — must be the port the process binds to 0.0.0.0'
-                  : 'the port your app listens on inside the container (default 3000)'}
-              </p>
+              )}
 
               <label className="flex items-start gap-2 rounded-md border border-line bg-surface-2/40 px-3 py-2">
                 <input

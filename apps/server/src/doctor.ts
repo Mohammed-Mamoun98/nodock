@@ -1,4 +1,6 @@
 import { lookup } from 'node:dns/promises';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import type { CaddyAdmin } from './caddy/admin';
 import { allowedHosts } from './caddy/service';
@@ -198,6 +200,26 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
       status: 'fail',
       detail: error instanceof Error ? error.message : 'write failed',
       hint: 'Check that /data is mounted and writable by the container user',
+    });
+  }
+
+  // --- static artifacts ---------------------------------------------------
+  // Caddy reads these files through a volume nodock cannot see, so what is
+  // checkable here is the writing half. Deploys prove the other half, and a
+  // failure there names this volume.
+  const artifactsDir = join(config.paths.artifactsDir);
+  try {
+    mkdirSync(artifactsDir, { recursive: true });
+    const probe = join(artifactsDir, '.doctor');
+    writeFileSync(probe, String((deps.now ?? Date.now)()));
+    rmSync(probe, { force: true });
+    add({ name: 'static artifacts', status: 'ok', detail: `${artifactsDir} is writable` });
+  } catch (error) {
+    add({
+      name: 'static artifacts',
+      status: 'warn',
+      detail: error instanceof Error ? error.message : 'not writable',
+      hint: 'Static services need this directory writable and mounted into Caddy at /srv/artifacts:ro',
     });
   }
 

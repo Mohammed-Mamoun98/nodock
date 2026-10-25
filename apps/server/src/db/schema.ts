@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { STRATEGIES, type Strategy } from '../lib/framework';
 
 const id = () =>
   text('id')
@@ -45,6 +46,19 @@ export type RuntimeState = (typeof RUNTIME_STATES)[number];
 
 export const DEPLOYMENT_TRIGGERS = ['manual', 'push', 'rollback'] as const;
 export type DeploymentTrigger = (typeof DEPLOYMENT_TRIGGERS)[number];
+
+/**
+ * How a service is built. `dockerfile` is the default, so every service created
+ * before this column existed keeps behaving exactly as it did.
+ */
+export { STRATEGIES, type Strategy };
+
+/**
+ * What a deployment delivered. The deploy pipeline's two paths differ in more
+ * than a status: an `artifact` has no container to pull, start, or inspect.
+ */
+export const DEPLOYMENT_MODES = ['image', 'artifact'] as const;
+export type DeploymentMode = (typeof DEPLOYMENT_MODES)[number];
 
 export const users = sqliteTable(
   'users',
@@ -126,6 +140,11 @@ export const services = sqliteTable(
     containerPort: integer('container_port'),
     /** Per-service override for the 512 MB default container limit. */
     memoryLimitMb: integer('memory_limit_mb'),
+    strategy: text('strategy', { enum: STRATEGIES }).notNull().default('dockerfile'),
+    /** Static only; null means "the recipe's default for that framework". */
+    outputDir: text('output_dir'),
+    /** Static only; null means "decide from detection" (SPA vs 404). */
+    spaFallback: integer('spa_fallback', { mode: 'boolean' }),
     createdAt: createdAt().notNull(),
   },
   (t) => [
@@ -188,6 +207,12 @@ export const repoHooks = sqliteTable(
     webhookSecretEnc: text('webhook_secret_enc').notNull(),
     ciTokenHash: text('ci_token_hash'),
     workflowSha: text('workflow_sha'),
+    /**
+     * Contract version of the workflow committed to the repo. A v1 workflow must
+     * never receive a v2 payload: it would silently build the wrong thing. Absent
+     * means 1, which is what every row written before the column existed is.
+     */
+    workflowVersion: integer('workflow_version').notNull().default(1),
     ciEnabledAt: integer('ci_enabled_at', { mode: 'timestamp_ms' }),
     createdAt: createdAt().notNull(),
   },
@@ -208,6 +233,15 @@ export const deployments = sqliteTable(
     imageRef: text('image_ref').notNull(),
     /** `sha256:…` — immutable, so rollback survives tag churn and pruning. */
     imageDigest: text('image_digest'),
+    /** `image` runs a container; `artifact` is files Caddy serves directly. */
+    mode: text('mode', { enum: DEPLOYMENT_MODES }).notNull().default('image'),
+    /** What the build reported it built: `next`, `go`, `vite`, `standalone`, … */
+    framework: text('framework'),
+    /** Static only: `DATA_DIR/artifacts/<deployment id>/site`. */
+    artifactPath: text('artifact_path'),
+    artifactBytes: integer('artifact_bytes'),
+    /** Image size, when the build reported it. The panel shows it next to the deploy. */
+    imageBytes: integer('image_bytes'),
     containerName: text('container_name'),
     ciRunUrl: text('ci_run_url'),
     rollbackOf: text('rollback_of'),

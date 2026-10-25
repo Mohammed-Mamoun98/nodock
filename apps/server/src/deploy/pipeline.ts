@@ -1,10 +1,10 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { decrypt, deriveKey } from '../auth/crypto';
 import type { CaddyAdmin } from '../caddy/admin';
-import { buildRoutes, renderCurrentConfig } from '../caddy/service';
-import { renderCaddyfile } from '../caddy/render';
+import { buildRoutes, renderCurrentConfig, type PendingRoute } from '../caddy/service';
+import { artifactRoot, renderCaddyfile } from '../caddy/render';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
 import type { DeployLogs } from './deploy-log';
@@ -91,6 +91,12 @@ export async function runDeployment(
   if (!serviceEnv || !service || !environment) {
     fail(db, deploymentId, 'Service env disappeared before deploy', now());
     return 'failed';
+  }
+
+  // An artifact deployment never pulls, starts or probes a container: the build
+  // already delivered the files. The two paths share only the switch.
+  if (deployment.mode === 'artifact') {
+    return runArtifactDeployment(deps, deployment.id);
   }
 
   // An unset port is resolved from the image's EXPOSE after the pull, which is the
@@ -224,7 +230,7 @@ export async function runDeployment(
 
     setStatus('switching');
     const host = serviceEnv.customDomain ?? serviceEnv.generatedHost;
-    const switched = await switchRoute(deps, host, `${name}:${port}`);
+    const switched = await switchRoute(deps, { host, upstream: `${name}:${port}` });
     if (!switched) {
       await docker.remove(name).catch(() => {});
       fail(
@@ -279,6 +285,174 @@ export async function runDeployment(
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The static path: there is nothing to pull and nothing to run. Validate what CI
+ * uploaded, prove Caddy can read it, then switch the route. As with an image, any
+ * failure leaves the previous deployment serving.
+ */
+async function runArtifactDeployment(
+  deps: DeployDeps,
+  deploymentId: string,
+): Promise<DeployOutcome> {
+  const { config, db, docker, admin } = deps;
+  const now = deps.now ?? (() => Date.now());
+  const log = (line: string) => deps.logs?.append(deploymentId, line);
+
+  const deployment = db.select().from(deployments).where(eq(deployments.id, deploymentId)).get();
+  if (!deployment) return 'skipped';
+
+  const serviceEnv = db
+    .select()
+    .from(serviceEnvs)
+    .where(eq(serviceEnvs.id, deployment.serviceEnvId))
+    .get();
+  const service = serviceEnv
+    ? db.select().from(services).where(eq(services.id, serviceEnv.serviceId)).get()
+    : null;
+
+  if (!serviceEnv || !service) {
+    fail(db, deploymentId, 'Service env disappeared before deploy', now());
+    return 'failed';
+  }
+
+  const setStatus = (status: typeof deployment.status, patch: Partial<typeof deployment> = {}) => {
+    db.update(deployments)
+      .set({ status, ...patch })
+      .where(eq(deployments.id, deploymentId))
+      .run();
+  };
+
+  const previous = db
+    .select()
+    .from(deployments)
+    .where(and(eq(deployments.serviceEnvId, serviceEnv.id), eq(deployments.status, 'live')))
+    .orderBy(desc(deployments.createdAt))
+    .get();
+
+  let probeLoaded = false;
+
+  try {
+    setStatus('starting', {
+      startedAt: new Date(now()),
+      logPath: deps.logs?.pathFor(deploymentId) ?? null,
+    });
+    log('static deployment: no image, no container');
+
+    const relative = deployment.artifactPath ?? `artifacts/${deployment.id}/site`;
+    const site = join(config.paths.artifactsDir, deployment.id, 'site');
+    const entries = existsSync(site) ? readdirSync(site) : [];
+
+    if (entries.length === 0) {
+      fail(
+        db,
+        deploymentId,
+        'no artifact to serve: the build did not upload one, or the upload was rejected',
+        now(),
+      );
+      return 'failed';
+    }
+
+    if (!entries.includes('index.html')) {
+      log('warning: the artifact has no index.html at its root; the site will 404 at /');
+    }
+    log(
+      `serving ${entries.length} top-level entr${entries.length === 1 ? 'y' : 'ies'} from ${relative}`,
+    );
+
+    // The root has to be the one Caddy mounts, not the one nodock writes: a
+    // missing volume mounts fine and 404s, which is a confusing failure to debug
+    // from the browser, so it is proved here first.
+    const root = artifactRoot(relative, config.caddy.artifactsRoot);
+    let healthUrl: string | null = null;
+
+    if (admin && config.caddy.probeUrl) {
+      try {
+        await admin.load(renderCurrentConfig({ config, db, probe: { deploymentId, root } }));
+        probeLoaded = true;
+      } catch (error) {
+        fail(
+          db,
+          deploymentId,
+          `Caddy rejected the static health-check route: ${errorText(error)}`,
+          now(),
+        );
+        return 'failed';
+      }
+      healthUrl = `${config.caddy.probeUrl}/probe/${deployment.id}/index.html`;
+      log(`probing ${healthUrl}`);
+    }
+
+    if (healthUrl) {
+      setStatus('healthchecking');
+      const healthy = await (deps.health ?? defaultHealth)(healthUrl);
+      if (!healthy) {
+        if (probeLoaded) await reconcileClean(deps);
+        fail(
+          db,
+          deploymentId,
+          [
+            `Caddy could not serve the site from ${root}`,
+            'The artifacts volume is probably not mounted into Caddy — run the doctor.',
+          ].join('\n'),
+          now(),
+        );
+        return 'failed';
+      }
+    }
+
+    setStatus('switching');
+    const host = serviceEnv.customDomain ?? serviceEnv.generatedHost;
+    const switched = await switchRoute(deps, {
+      host,
+      root,
+      spaFallback: service.spaFallback ?? false,
+    });
+
+    if (!switched) {
+      if (probeLoaded) await reconcileClean(deps);
+      fail(db, deploymentId, 'Caddy rejected the route switch; previous site left serving', now());
+      return 'failed';
+    }
+
+    setStatus('live', {
+      finishedAt: new Date(now()),
+      // Recorded as-is: there is no container, so there is nothing for the runtime
+      // watchdog to inspect and nothing for it to call crashed.
+      runtimeState: null,
+      runtimeExitCode: null,
+      runtimeRestarts: null,
+      runtimeOom: null,
+      runtimeCheckedAt: null,
+    });
+    log('live');
+
+    // A service can move from a Dockerfile to files. The old container is no
+    // longer behind the route, so it is stopped rather than left running.
+    if (previous?.containerName) {
+      await docker.stop(previous.containerName, 15).catch(() => {});
+      await docker.remove(previous.containerName).catch(() => {});
+    }
+
+    db.update(deployments)
+      .set({ status: 'superseded', runtimeState: null, runtimeCheckedAt: null })
+      .where(
+        and(
+          eq(deployments.serviceEnvId, serviceEnv.id),
+          eq(deployments.status, 'live'),
+          ne(deployments.id, deploymentId),
+        ),
+      )
+      .run();
+
+    if (admin) await reconcileClean(deps);
+    return 'live';
+  } catch (error) {
+    if (probeLoaded) await reconcileClean(deps);
+    fail(db, deploymentId, errorText(error), now());
+    return 'failed';
+  }
 }
 
 /**
@@ -363,7 +537,7 @@ async function defaultHealth(url: string, timeoutMs = 60_000): Promise<boolean> 
   return false;
 }
 
-async function switchRoute(deps: DeployDeps, host: string, upstream: string): Promise<boolean> {
+async function switchRoute(deps: DeployDeps, pending: PendingRoute): Promise<boolean> {
   if (!deps.admin) return true; // host runs without Caddy (dev); nothing to switch
 
   const config = renderCaddyfile({
@@ -372,7 +546,12 @@ async function switchRoute(deps: DeployDeps, host: string, upstream: string): Pr
     askUrl: deps.config.caddy.askUrl,
     adminSocket: deps.config.caddy.adminSocket,
     adminUrl: deps.config.caddy.adminUrl,
-    routes: buildRoutes(deps.db, { host, upstream }),
+    artifactsRoot: deps.config.caddy.artifactsRoot,
+    routes: buildRoutes(deps.db, {
+      pending,
+      artifactsRoot: deps.config.caddy.artifactsRoot,
+      artifactsDir: deps.config.paths.artifactsDir,
+    }),
   });
 
   try {

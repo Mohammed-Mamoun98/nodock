@@ -7,7 +7,9 @@ import type { Db } from '../db/client';
 import type { DockerAdapter } from '../docker/adapter';
 import { cleanupReposIfUnused, reposForServiceIds } from '../deploy/repo-cleanup';
 import {
+  artifactIdsFor,
   containerNamesFor,
+  removeArtifacts,
   reconcileRoutes,
   serviceEnvIdsForEnvironment,
   serviceEnvIdsForProject,
@@ -158,6 +160,9 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
         contextPath: row.contextPath,
         containerPort: row.containerPort,
         memoryLimitMb: row.memoryLimitMb,
+        strategy: row.strategy,
+        outputDir: row.outputDir,
+        spaFallback: row.spaFallback,
         serviceEnvs: envLinks
           .filter((link) => link.serviceId === row.id)
           .map((link) => {
@@ -178,6 +183,10 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
                     ciRunUrl: latest.ciRunUrl,
                     error: latest.error,
                     createdAt: iso(latest.createdAt),
+                    mode: latest.mode,
+                    framework: latest.framework,
+                    imageBytes: latest.imageBytes,
+                    artifactBytes: latest.artifactBytes,
                     // A card must be able to say "crashed", not "live".
                     runtimeState: latest.runtimeState,
                     runtimeWarning: runtimeWarning(latest),
@@ -231,12 +240,14 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
     const affectedRepos = reposForServiceIds(db, serviceIds);
     const serviceEnvIds = serviceEnvIdsForProject(db, projectId);
     const names = containerNamesFor(db, serviceEnvIds);
+    const artifacts = artifactIdsFor(db, serviceEnvIds);
 
     db.delete(projects).where(eq(projects.id, projectId)).run();
 
     // Routes first (a dead route is worse than a running container), then containers.
     await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
     await stopContainers(deps.docker, names);
+    removeArtifacts(config.paths.artifactsDir, artifacts);
 
     if (deps.github) {
       await cleanupReposIfUnused({ config, db, github: deps.github }, affectedRepos);
@@ -322,12 +333,15 @@ export function registerProjectRoutes(app: Hono, deps: ProjectDeps): void {
       return c.json(body, status);
     }
 
-    const names = containerNamesFor(db, serviceEnvIdsForEnvironment(db, env.id));
+    const envServiceEnvIds = serviceEnvIdsForEnvironment(db, env.id);
+    const names = containerNamesFor(db, envServiceEnvIds);
+    const artifacts = artifactIdsFor(db, envServiceEnvIds);
 
     db.delete(environments).where(eq(environments.id, env.id)).run();
 
     await reconcileRoutes({ config, db, docker: deps.docker, admin: deps.admin });
     await stopContainers(deps.docker, names);
+    removeArtifacts(config.paths.artifactsDir, artifacts);
 
     return c.body(null, 204);
   });

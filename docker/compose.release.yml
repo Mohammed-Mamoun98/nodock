@@ -19,6 +19,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
       - caddy_admin:/run/caddy
+      # Static sites: the same volume nodock writes, mounted where Caddy reads it.
+      # Read-only on purpose — the proxy has no business writing to a build artifact.
+      - nodock_artifacts:/srv/artifacts:ro
     networks: [edge, control]
     restart: unless-stopped
 
@@ -33,6 +36,7 @@ services:
       CADDY_PROBE_URL: http://caddy:8099
     volumes:
       - nodock_data:/data
+      - nodock_artifacts:/data/artifacts
       - caddy_admin:/run/caddy
       - /var/run/docker.sock:/var/run/docker.sock
     networks: [control]
@@ -51,3 +55,4 @@ volumes:
   caddy_config: {}
   caddy_admin: {}
   nodock_data: {}
+  nodock_artifacts: {}

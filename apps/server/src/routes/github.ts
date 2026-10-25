@@ -7,6 +7,7 @@ import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { users } from '../db/schema';
 import { apiError } from '../http';
+import { detectFramework, strategyLabel } from '../lib/framework';
 import { findDockerfiles, parseExposedPorts } from '../lib/inspect-repo';
 
 function respondToGitHubError(c: Context, error: unknown) {
@@ -167,6 +168,22 @@ export function registerGitHubRoutes(app: Hono, deps: GitHubRouteDeps): void {
         if (file) exposedPorts = parseExposedPorts(file.content);
       }
 
+      // What the repo is, so the wizard can prefill instead of asking. Best effort
+      // by design: the build reports the truth, and this guess is allowed to be wrong.
+      const read = async (path: string) => {
+        if (!tree.paths.includes(path)) return null;
+        const file = await github.getFile!(auth.token, repoFullName, path, ref);
+        return file?.content ?? null;
+      };
+      const nextConfigPath = tree.paths.find((path) =>
+        /^next\.config\.(js|mjs|ts|cjs)$/.test(path),
+      );
+      const detection = detectFramework({
+        paths: tree.paths,
+        packageJson: await read('package.json'),
+        nextConfig: nextConfigPath ? await read(nextConfigPath) : null,
+      });
+
       return c.json({
         ref,
         hasDockerfile: candidates.length > 0,
@@ -176,6 +193,14 @@ export function registerGitHubRoutes(app: Hono, deps: GitHubRouteDeps): void {
         exposedPorts,
         suggestedPort: exposedPorts.length === 1 ? exposedPorts[0] : null,
         treeTruncated: tree.truncated,
+        detection: {
+          strategy: detection.strategy,
+          framework: detection.framework,
+          contextPath: detection.context,
+          outputDir: detection.outputDir,
+          spaFallback: detection.spaFallback,
+          label: strategyLabel(detection),
+        },
       });
     } catch (error) {
       return respondToGitHubError(c, error);
