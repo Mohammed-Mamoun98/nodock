@@ -31,6 +31,8 @@ export interface AppDeps {
   now?: () => number;
   /** Injected in tests; defaults to process start. */
   bootedAt?: number;
+  /** Injected in tests: log tail and keepalive intervals, in milliseconds. */
+  logTimings?: { tailMs?: number; pingMs?: number };
 }
 
 export function createApp(deps: AppDeps) {
@@ -120,7 +122,14 @@ export function createApp(deps: AppDeps) {
     github: deps.github ?? createGitHubClient(),
   });
   registerVariableRoutes(app, { config, db });
-  registerLogRoutes(app, { config, db, docker, logs, now: deps.now });
+  registerLogRoutes(app, {
+    config,
+    db,
+    docker,
+    logs,
+    now: deps.now,
+    timings: deps.logTimings,
+  });
 
   // Everything still unrouted behind the guard returns an explicit 501, not a silent SPA fallback.
   app.all('/api/*', (c) => {

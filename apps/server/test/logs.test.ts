@@ -57,7 +57,10 @@ function fakeDocker(lines: string[] = ['booting', 'listening on 3000']) {
   return { docker, followed };
 }
 
-function seed(db: Db, options: { liveContainer?: string; status?: 'live' | 'failed' } = {}) {
+function seed(
+  db: Db,
+  options: { liveContainer?: string; status?: 'live' | 'failed' | 'queued' } = {},
+) {
   const project = db.insert(projects).values({ name: 'Milo', slug: 'milo' }).returning().get();
   const env = db
     .insert(environments)
@@ -103,6 +106,50 @@ function seed(db: Db, options: { liveContainer?: string; status?: 'live' | 'fail
 async function appWith(db: Db, docker: DockerAdapter, dir = mkdtempSync(join(tmpdir(), 'nl-'))) {
   const logs = createDeployLogs(dir);
   const app = createApp({ config, db, docker, admin: null, github, logs });
+  return { call: await signIn(app), logs };
+}
+
+/**
+ * Reads a streaming response until `needle` shows up, then hangs up the way an
+ * unmounted viewer does. Every keepalive assertion here uses millisecond timings, so
+ * callers never wait on the real five second beat.
+ */
+async function readUntil(response: Response, needle: string, ms = 1_000): Promise<string> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  const deadline = Date.now() + ms;
+  let text = '';
+
+  try {
+    while (!text.includes(needle)) {
+      // Sequential by nature: the next chunk only exists after this one.
+      // eslint-disable-next-line no-await-in-loop
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      if (Date.now() > deadline) break;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  return text;
+}
+
+/** Timings short enough that a "nothing is happening" test finishes in milliseconds. */
+const fastTimings = { tailMs: 5, pingMs: 20 };
+
+async function appWithTimings(db: Db, docker: DockerAdapter) {
+  const logs = createDeployLogs(mkdtempSync(join(tmpdir(), 'nl-')));
+  const app = createApp({
+    config,
+    db,
+    docker,
+    admin: null,
+    github,
+    logs,
+    logTimings: fastTimings,
+  });
   return { call: await signIn(app), logs };
 }
 
@@ -160,6 +207,38 @@ describe('deploy logs over http', () => {
     expect(stream).toContain('event: end');
   });
 
+  test('a deployment waiting for CI keeps its stream alive with no log to show', async () => {
+    const { db } = testDb();
+    // `queued`: the row exists, the pipeline has not written a byte yet — which is
+    // exactly the minute where an idle socket used to die and read "disconnected".
+    const { deployment } = seed(db, { status: 'queued' });
+    const { call } = await appWithTimings(db, fakeDocker().docker);
+
+    const response = await call(`/api/deployments/${deployment.id}/logs/stream`);
+    const text = await readUntil(response, 'keepalive');
+
+    expect(response.status).toBe(200);
+    expect(text).toContain(': keepalive');
+    // Keepalives are SSE comments: no event, no data, nothing for the parser to show.
+    expect(text).not.toContain('event:');
+  });
+
+  test('a queued deployment still delivers the log once the pipeline starts writing', async () => {
+    const { db } = testDb();
+    const { deployment } = seed(db, { status: 'queued' });
+    const { call, logs } = await appWithTimings(db, fakeDocker().docker);
+
+    await readUntil(await call(`/api/deployments/${deployment.id}/logs/stream`), 'keepalive');
+
+    logs.append(deployment.id, 'pulling image');
+    const later = await readUntil(
+      await call(`/api/deployments/${deployment.id}/logs/stream`),
+      'pulling image',
+    );
+    expect(later).toContain('event: chunk');
+    expect(later).toContain('pulling image');
+  });
+
   test('an unknown deployment is a 404, not an empty log', async () => {
     const { db } = testDb();
     const { call } = await appWith(db, fakeDocker().docker);
@@ -214,6 +293,28 @@ describe('runtime logs over http', () => {
     );
 
     expect(response.status).toBe(409);
+  });
+
+  test('a quiet container keeps the connection alive while the app says nothing', async () => {
+    const { db } = testDb();
+    const { service, serviceEnv } = seed(db, { liveContainer: 'nodock-api-prod-12345678' });
+    const docker: DockerAdapter = {
+      ...fakeDocker().docker,
+      logsFollow: (_name, _tail, _onLine, signal) =>
+        new Promise<void>((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        }),
+    };
+    const { call } = await appWithTimings(db, docker);
+
+    const response = await call(
+      `/api/services/${service.id}/envs/${serviceEnv.environmentId}/logs/stream`,
+    );
+    const text = await readUntil(response, ': keepalive');
+
+    expect(response.status).toBe(200);
+    expect(text).toContain('event: start');
+    expect(text).toContain(': keepalive');
   });
 
   test('caps concurrent followers so the box cannot be flooded with docker children', async () => {

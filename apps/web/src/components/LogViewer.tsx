@@ -4,6 +4,7 @@ import { useLogStream, type StreamState } from '../lib/logStream';
 const stateLabel: Record<StreamState, string> = {
   connecting: 'connecting…',
   live: 'following',
+  idle: 'nothing running',
   ended: 'ended',
   error: 'disconnected',
 };
@@ -11,6 +12,7 @@ const stateLabel: Record<StreamState, string> = {
 const stateTone: Record<StreamState, string> = {
   connecting: 'text-text-dim',
   live: 'text-lime',
+  idle: 'text-text-dim',
   ended: 'text-text-dim',
   error: 'text-red',
 };
