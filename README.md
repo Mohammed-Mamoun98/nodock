@@ -127,7 +127,7 @@ Routes (hash router): `#/`, `#/services/new`, `#/services/:id`, `#/settings`,
 On a VPS with Docker (no repo clone, no build on the box):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mohammed-Mamoun98/nodock/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/malshaer03/nodock/main/scripts/install.sh | sudo bash
 ```
 
 The installer writes `/opt/nodock/` (`compose.yml`, `Caddyfile`, `.env`), adds swap if the box
