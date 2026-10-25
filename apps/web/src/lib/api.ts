@@ -236,6 +236,7 @@ export function listBranches(owner: string, repo: string): Promise<{ branches: s
 
 export interface DeploymentRow {
   id: string;
+  serviceEnvId: string;
   status: DeploymentStatus;
   trigger: 'manual' | 'push' | 'rollback';
   commitSha: string | null;
@@ -265,6 +266,17 @@ export function deployService(
   envId: string,
 ): Promise<{ deployment: { id: string; status: DeploymentStatus } }> {
   return request(`/api/services/${serviceId}/envs/${envId}/deploy`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function rollbackDeployment(
+  serviceId: string,
+  envId: string,
+  deploymentId: string,
+): Promise<{ deployment: { id: string; status: DeploymentStatus } }> {
+  return request(`/api/services/${serviceId}/envs/${envId}/deployments/${deploymentId}/rollback`, {
     method: 'POST',
     body: JSON.stringify({}),
   });

@@ -19,7 +19,7 @@ import {
   type ContainerSpec,
   type DockerAdapter,
 } from '../src/docker/adapter';
-import { runDeployment } from '../src/deploy/pipeline';
+import { imageForPull, runDeployment } from '../src/deploy/pipeline';
 import { encrypt, deriveKey } from '../src/auth/crypto';
 import { testDb } from './helpers';
 
@@ -747,5 +747,36 @@ describe('health checks without joining the app network', () => {
     const row = db.select().from(deployments).where(eq(deployments.id, pending.id)).get();
     expect(row?.status).toBe('failed');
     expect(row?.error).toContain('health-check route');
+  });
+});
+
+describe('immutable image refs', () => {
+  const digest = `sha256:${'b'.repeat(64)}`;
+
+  test('pull and run the digest CI reported, not the mutable tag', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db);
+    db.update(deployments).set({ imageDigest: digest }).where(eq(deployments.id, pending.id)).run();
+
+    const { docker, calls } = fakeDocker();
+    const { admin } = fakeAdmin();
+
+    const outcome = await runDeployment(
+      { config, db, docker, admin, health: async () => true },
+      pending.id,
+    );
+
+    expect(outcome).toBe('live');
+    expect(calls.pulled).toEqual([`ghcr.io/mohammed/milo@${digest}`]);
+    expect(calls.run[0]?.image).toBe(`ghcr.io/mohammed/milo@${digest}`);
+  });
+
+  test('a malformed digest falls back to the tag instead of guessing', () => {
+    expect(imageForPull('ghcr.io/mohammed/milo:api-old', 'sha256:deadbeef')).toBe(
+      'ghcr.io/mohammed/milo:api-old',
+    );
+    expect(imageForPull('ghcr.io/mohammed/milo:api-old', null)).toBe(
+      'ghcr.io/mohammed/milo:api-old',
+    );
   });
 });

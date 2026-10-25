@@ -8,6 +8,7 @@ import {
   deployService,
   getService,
   listDeployments,
+  rollbackDeployment,
   type DeploymentRow,
 } from '../lib/api';
 import { deploymentStatusMeta, isDeploymentInFlight, stateMeta } from '../lib/status';
@@ -242,6 +243,28 @@ export function ServicePanel({
     }
   }
 
+  async function startRollback(row: DeploymentRow) {
+    // History spans environments, so resolve the deployment's own env rather than
+    // assuming the one selected in the top bar.
+    const targetEnv = service.data?.serviceEnvs.find((env) => env.id === row.serviceEnvId);
+    if (!targetEnv) {
+      setActionError('This deployment\u2019s environment no longer exists');
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      await rollbackDeployment(serviceId, targetEnv.environmentId, row.id);
+      deployments.reload();
+    } catch (cause) {
+      setActionError(
+        cause instanceof ApiError ? `${cause.code} · ${cause.message}` : String(cause),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function removeService() {
     setDeleting(true);
     setActionError(null);
@@ -394,8 +417,10 @@ export function ServicePanel({
                       active={false}
                       busy={busy}
                       onOpenRun={(url) => window.open(url, '_blank', 'noreferrer')}
-                      onRollback={() =>
-                        setActionError('Rollback lands with the image history view')
+                      onRollback={
+                        row.status === 'live' || row.status === 'superseded'
+                          ? () => startRollback(row)
+                          : undefined
                       }
                     />
                   ))}
