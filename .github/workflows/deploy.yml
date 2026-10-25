@@ -44,9 +44,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Derive the tag
+      - name: Derive the image and tag
         id: meta
-        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Docker tag names must be lowercase; github.repository keeps the owner's
+          # case (`Mohammed-Mamoun98/nodock`), and buildx rejects it as a tag.
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -64,8 +68,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.tag }}
-            ghcr.io/${{ github.repository }}:main
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.image }}:main
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
