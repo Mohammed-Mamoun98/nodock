@@ -48,7 +48,7 @@ jobs:
         id: meta
         run: |
           # Docker tag names must be lowercase; github.repository keeps the owner's
-          # case (`Mohammed-Mamoun98/nodock`), and buildx rejects it as a tag.
+          # case (`malshaer03/nodock`), and buildx rejects it as a tag.
           echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
           echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
