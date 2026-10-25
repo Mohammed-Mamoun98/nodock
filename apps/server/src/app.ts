@@ -133,7 +133,7 @@ export function createApp(deps: AppDeps) {
     admin: admin ?? undefined,
     github: deps.github ?? createGitHubClient(),
   });
-  registerVariableRoutes(app, { config, db });
+  registerVariableRoutes(app, { config, db, github: deps.github ?? createGitHubClient() });
   registerLogRoutes(app, {
     config,
     db,

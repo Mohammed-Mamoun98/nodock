@@ -2,22 +2,130 @@ import { and, eq } from 'drizzle-orm';
 import type { Hono } from 'hono';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
-import { variables } from '../db/schema';
+import { services, variables } from '../db/schema';
 import { decrypt, deriveKey, encrypt } from '../auth/crypto';
+import type { GitHubClient } from '../auth/github';
+import { readSessionToken } from '../auth/session-token';
 import { apiError, validationError } from '../http';
+import { findEnvFiles, looksSecret, parseEnvKeys } from '../lib/env-example';
 import { findServiceEnv } from './services';
 import { variableListSchema } from './schemas';
 
 export interface VariableDeps {
   config: Config;
   db: Db;
+  /** Optional: the repo scan is a convenience, and the tab works without it. */
+  github?: GitHubClient;
+}
+
+/** Parsed templates, cached because the panel refetches on every open. */
+const SUGGESTION_TTL_MS = 60_000;
+
+interface Suggestion {
+  key: string;
+  isSecret: boolean;
+  comment: string | null;
+}
+
+/** A scan that could not run is still an answer: no names, and a sentence saying why. */
+function noSuggestions(note: string): { source: null; values: Suggestion[]; note: string } {
+  return { source: null, values: [], note };
 }
 
 const MASK = '••••••••';
 
 export function registerVariableRoutes(app: Hono, deps: VariableDeps): void {
-  const { db, config } = deps;
+  const { db, config, github } = deps;
   const key = deriveKey(config.secret);
+  const suggestionCache = new Map<
+    string,
+    { expiresAt: number; source: string; values: Suggestion[] }
+  >();
+
+  /**
+   * "The repo's .env.example lists these names — want them?"
+   *
+   * Names only. A placeholder value in a template (`sk_test_xxxx`) is not a secret and
+   * not a default, so it never leaves the repo; the user supplies the real value.
+   *
+   * Every failure answers 200 with a `note`: a scan that cannot run must never turn the
+   * variables tab into an error page.
+   */
+  app.get('/api/services/:id/envs/:envId/variable-suggestions', async (c) => {
+    const serviceEnv = findServiceEnv(db, c.req.param('id'), c.req.param('envId'));
+    if (!serviceEnv) {
+      const { status, body } = apiError('not_found', 'Service environment not found', 404);
+      return c.json(body, status);
+    }
+
+    const missing = (['listTree', 'getFile'] as const).filter(
+      (name) => typeof github?.[name] !== 'function',
+    );
+    if (missing.length > 0) {
+      return c.json(noSuggestions(`GitHub file access is not available (${missing.join(', ')})`));
+    }
+
+    const service = db.select().from(services).where(eq(services.id, serviceEnv.serviceId)).get();
+    if (!service) return c.json(noSuggestions('This service no longer exists'));
+
+    const auth = readSessionToken(db, key, c.req.header('cookie'));
+    if (!auth) return c.json(noSuggestions('Sign in again to scan the repo'));
+
+    const cacheKey = `suggest:${auth.userId}:${service.repoFullName}:${serviceEnv.branch}`;
+    let parsed = suggestionCache.get(cacheKey);
+    if (parsed && parsed.expiresAt < Date.now()) parsed = undefined;
+
+    if (!parsed) {
+      try {
+        const tree = await github!.listTree!(auth.token, service.repoFullName, serviceEnv.branch);
+        const source = findEnvFiles(tree.paths)[0];
+        if (!source) {
+          return c.json(
+            noSuggestions(
+              `no .env.example (or .env.sample / .env.template) on ${serviceEnv.branch} — nothing to read`,
+            ),
+          );
+        }
+
+        const file = await github!.getFile!(
+          auth.token,
+          service.repoFullName,
+          source,
+          serviceEnv.branch,
+        );
+        if (!file)
+          return c.json(noSuggestions(`${source} vanished between the listing and the read`));
+
+        parsed = {
+          expiresAt: Date.now() + SUGGESTION_TTL_MS,
+          source,
+          values: parseEnvKeys(file.content).map((entry) => ({
+            key: entry.key,
+            isSecret: looksSecret(entry.key),
+            comment: entry.comment,
+          })),
+        };
+        suggestionCache.set(cacheKey, parsed);
+      } catch (error) {
+        return c.json(noSuggestions(error instanceof Error ? error.message : String(error)));
+      }
+    }
+
+    const already = new Set(
+      db
+        .select({ key: variables.key })
+        .from(variables)
+        .where(eq(variables.serviceEnvId, serviceEnv.id))
+        .all()
+        .map((row) => row.key),
+    );
+
+    return c.json({
+      source: parsed.source,
+      values: parsed.values.filter((entry) => !already.has(entry.key)),
+      note: null,
+    });
+  });
 
   app.get('/api/services/:id/envs/:envId/variables', (c) => {
     const serviceEnv = findServiceEnv(db, c.req.param('id'), c.req.param('envId'));

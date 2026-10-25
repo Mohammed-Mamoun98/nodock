@@ -206,6 +206,24 @@ export function saveVariables(
   });
 }
 
+export interface VariableSuggestion {
+  key: string;
+  isSecret: boolean;
+  /** The comment above the name in the template, when there was one. */
+  comment: string | null;
+}
+
+/**
+ * Names the repo's .env.example asks for. `source` is the file that answered and `note`
+ * says why nothing came back — a failed scan is an answer, never an error page.
+ */
+export function getVariableSuggestions(
+  serviceId: string,
+  envId: string,
+): Promise<{ source: string | null; values: VariableSuggestion[]; note: string | null }> {
+  return request(`/api/services/${serviceId}/envs/${envId}/variable-suggestions`);
+}
+
 export type ServiceRecord = Omit<ServiceSummary, 'serviceEnvs'>;
 
 export function getService(

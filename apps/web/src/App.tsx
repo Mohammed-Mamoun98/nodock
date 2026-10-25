@@ -195,6 +195,7 @@ export default function App() {
               <ServicePanel
                 serviceId={route.serviceId}
                 activeEnvId={activeEnvId}
+                initialTab="Variables"
                 onClose={() => navigate('/')}
               />
             ) : null}

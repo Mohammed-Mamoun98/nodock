@@ -40,6 +40,8 @@ g.cancelAnimationFrame = (id: number) => clearTimeout(id);
 const anonymous = process.env.SMOKE_ANONYMOUS === '1';
 /** Same dashboard, but the container behind the deployment died after it went live. */
 const crashed = process.env.SMOKE_CRASHED === '1';
+/** The variables tab, where the repo's .env.example is offered as names to add. */
+const variablesTab = process.env.SMOKE_VARIABLES === '1';
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
@@ -47,6 +49,49 @@ function json(body: unknown): Response {
 
 g.fetch = async (input: string | URL | Request) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+  // The variables tab: what the repo asks for, and nothing set yet.
+  if (url.includes('/variable-suggestions')) {
+    return json({
+      source: '.env.example',
+      values: [
+        { key: 'DATABASE_URL', isSecret: false, comment: 'Database connection' },
+        { key: 'STRIPE_SECRET', isSecret: true, comment: null },
+      ],
+      note: null,
+    });
+  }
+  if (url.includes('/variables')) {
+    return json({ variables: [] });
+  }
+  if (url.includes('/api/services/')) {
+    return json({
+      service: {
+        id: 's1',
+        name: 'milo-api',
+        slug: 'milo-api',
+        repoFullName: 'mohammed/milo',
+        dockerfilePath: 'Dockerfile',
+        contextPath: '.',
+        containerPort: 3000,
+        memoryLimitMb: null,
+        projectId: 'p1',
+      },
+      serviceEnvs: [
+        {
+          id: 'se1',
+          environmentId: 'e1',
+          branch: 'main',
+          healthPath: '/healthz',
+          generatedHost: 'milo-api.apps.localhost',
+          customDomain: null,
+          latestDeployment: null,
+        },
+      ],
+      deployments: [],
+    });
+  }
+
   if (url.includes('/api/me')) {
     if (anonymous) return new Response(null, { status: 401 });
     return json({
@@ -119,6 +164,7 @@ g.fetch = async (input: string | URL | Request) => {
 };
 
 window.document.body.innerHTML = '<div id="root"></div>';
+if (variablesTab) window.location.hash = '#/services/s1/variables?project=p1';
 
 await import(pathToFileURL(join(assets, entry)).href);
 // The shell resolves /api/me before it renders anything, so wait for that round trip.
@@ -142,20 +188,30 @@ const checks: [string, boolean][] = anonymous
         ['green live not claimed', !html.includes('>live<')],
         ['runtime detail rendered', html.includes('container exited with code 1')],
       ]
-    : [
-        ['root is populated', html.length > 500],
-        ['product mark rendered', html.includes('nodock')],
-        ['project switcher rendered', html.includes('milo')],
-        ['service card rendered', html.includes('milo-api')],
-        ['real host rendered', html.includes('milo-api.apps.localhost')],
-        ['deployment state rendered', html.includes('live')],
-        // The dashboard renders live data now, not the canvas mock: the filter row is
-        // gone, so assert the environment switcher and the ingress node instead.
-        ['environment switcher rendered', html.includes('Production')],
-        ['ingress node rendered', html.includes('caddy')],
-        ['state vocabulary rendered', html.includes('live')],
-        ['sign out affordance rendered', html.includes('sign out')],
-      ];
+    : variablesTab
+      ? [
+          ['variables tab rendered', html.includes('variables')],
+          ['suggestion card names the file', html.includes('.env.example')],
+          ['offered name rendered', html.includes('DATABASE_URL')],
+          ['secret tag rendered', html.includes('STRIPE_SECRET')],
+          ['comment shown as the hint', html.includes('Database connection')],
+          // Nothing was written yet: adding is an explicit action, not a page load.
+          ['nothing auto-saved', html.includes('in sync')],
+        ]
+      : [
+          ['root is populated', html.length > 500],
+          ['product mark rendered', html.includes('nodock')],
+          ['project switcher rendered', html.includes('milo')],
+          ['service card rendered', html.includes('milo-api')],
+          ['real host rendered', html.includes('milo-api.apps.localhost')],
+          ['deployment state rendered', html.includes('live')],
+          // The dashboard renders live data now, not the canvas mock: the filter row is
+          // gone, so assert the environment switcher and the ingress node instead.
+          ['environment switcher rendered', html.includes('Production')],
+          ['ingress node rendered', html.includes('caddy')],
+          ['state vocabulary rendered', html.includes('live')],
+          ['sign out affordance rendered', html.includes('sign out')],
+        ];
 
 let failed = 0;
 for (const [label, ok] of checks) {
