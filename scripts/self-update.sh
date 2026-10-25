@@ -16,9 +16,18 @@ IMAGE_REPO="${IMAGE_REPO:-ghcr.io/mohammed-mamoun98/nodock}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker/compose.yml}"
 STATE_DIR="${STATE_DIR:-.deploy}"
 HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-30}"
+ENV_FILE="${ENV_FILE:-.env}"
 
 ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
+
+# A compose install keeps the registry credentials in .env, and ssh does not pass
+# the environment through, so read them here. GHCR packages are private by default
+# even when the repository is public, so an unauthenticated pull is denied.
+if [ -z "${GHCR_TOKEN:-}" ] && [ -f "$ENV_FILE" ]; then
+  GHCR_USER="${GHCR_USER:-$(sed -n 's/^GHCR_USER=//p' "$ENV_FILE" | head -n1)}"
+  GHCR_TOKEN="$(sed -n 's/^GHCR_TOKEN=//p' "$ENV_FILE" | head -n1)"
+fi
 
 # NODOCK_IMAGE overrides the image line in compose.yml, so a rollback can point at
 # any ref — including a locally built `nodock:dev`.
