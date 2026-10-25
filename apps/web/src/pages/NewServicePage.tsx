@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { FrameworkIcon } from '../components/FrameworkIcon';
 import { Icon } from '../components/Icon';
 import { RepoPicker } from '../components/RepoPicker';
 import { Button, LinkButton } from '../components/ui';
@@ -221,40 +222,51 @@ export function NewServicePage({ projectId }: { projectId: string }) {
               </div>
 
               {selected ? (
-                <div className="rounded-md border border-line bg-surface-2/40 px-3 py-2 font-mono text-mono-xs">
-                  {inspection.loading ? (
-                    <span className="text-text-dim">inspecting repository…</span>
-                  ) : null}
+                <div className="flex items-start gap-3 rounded-md border border-line bg-surface-2/40 px-3 py-2 font-mono text-mono-xs">
+                  {/* The mark says which technology at a glance; the lines say what
+                      the build will do with it. Empty until there is a verdict. */}
+                  <span
+                    className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded border border-line bg-surface text-text-dim"
+                    title={detected ? detected.framework : undefined}
+                  >
+                    <FrameworkIcon framework={detected?.framework} className="h-4 w-4" />
+                  </span>
 
-                  {inspection.error ? (
-                    <span className="text-red">inspect failed · {inspection.error.message}</span>
-                  ) : null}
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    {inspection.loading ? (
+                      <span className="text-text-dim">inspecting repository…</span>
+                    ) : null}
 
-                  {noDockerfile && detected ? (
-                    <div className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1.5 text-lime">
-                        <Icon name="check" className="h-3 w-3" />
-                        no Dockerfile needed
-                      </span>
-                      <span className="text-text-dim">{detected.label}</span>
-                    </div>
-                  ) : null}
+                    {inspection.error ? (
+                      <span className="text-red">inspect failed · {inspection.error.message}</span>
+                    ) : null}
 
-                  {detection?.hasDockerfile ? (
-                    <div className="flex flex-col gap-1 text-text-dim">
-                      <span className="text-lime">
-                        ✓ {detection.dockerfilePath}
-                        {detection.contextPath && detection.contextPath !== '.'
-                          ? ` · context ${detection.contextPath}`
-                          : ''}
-                      </span>
-                      <span>
-                        {detection.exposedPorts.length > 0
-                          ? `EXPOSE ${detection.exposedPorts.join(', ')}`
-                          : 'no EXPOSE in the Dockerfile — set the port your app listens on'}
-                      </span>
-                    </div>
-                  ) : null}
+                    {noDockerfile && detected ? (
+                      <>
+                        <span className="flex items-center gap-1.5 text-lime">
+                          <Icon name="check" className="h-3 w-3" />
+                          no Dockerfile needed
+                        </span>
+                        <span className="text-text-dim">{detected.label}</span>
+                      </>
+                    ) : null}
+
+                    {detection?.hasDockerfile ? (
+                      <div className="flex flex-col gap-1 text-text-dim">
+                        <span className="text-lime">
+                          ✓ {detection.dockerfilePath}
+                          {detection.contextPath && detection.contextPath !== '.'
+                            ? ` · context ${detection.contextPath}`
+                            : ''}
+                        </span>
+                        <span>
+                          {detection.exposedPorts.length > 0
+                            ? `EXPOSE ${detection.exposedPorts.join(', ')}`
+                            : 'no EXPOSE in the Dockerfile — set the port your app listens on'}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
 
