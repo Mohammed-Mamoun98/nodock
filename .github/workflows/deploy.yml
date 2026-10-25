@@ -113,7 +113,8 @@ jobs:
               exit 1
             fi
             git fetch --prune origin
-            git reset --hard '${{ github.sha }}'
+            # Detached, so the deploy never moves a branch the human is working on.
+            git -c advice.detachedHead=false checkout --force '${{ github.sha }}'
             ./scripts/self-update.sh '$TAG'
           "
 
