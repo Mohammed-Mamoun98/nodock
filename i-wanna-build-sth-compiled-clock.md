@@ -408,7 +408,7 @@ A `researcher` run, then an `evidence-auditor` pass. Output: `docs/research/gith
 - **Synchronous `bun:sqlite`** blocks the loop; schema is tiny and queries short — keep startup reconciliation batched and bounded.
 - **Disk growth** — prune images to the last 10 per service and deploy logs to the last 50; document it.
 - **Bun compatibility** — no dockerode; Docker stays behind a spawn-based adapter. Hono/React/SQLite remain portable to Node (`better-sqlite3`) if needed.
-- **Build logs are not in nodock** — this is the one deliberate UX compromise; deployment rows link directly to the Actions run.
+- **Build logs are not in nodock** — this is the one deliberate UX compromise; deployment rows link directly to the Actions run. The *deploy* log (pull/start/health/switch) and the app's *runtime* log both live in the panel, over SSE.
 
 ## Resource budgets (measure, don't estimate)
 

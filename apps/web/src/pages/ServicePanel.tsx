@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Icon } from '../components/Icon';
+import { LogViewer } from '../components/LogViewer';
 import { Button, StatusChip, StatusWord } from '../components/ui';
 import {
   ApiError,
@@ -15,7 +16,7 @@ import { deriveState, relativeAge } from '../lib/view';
 import { navigate } from '../lib/router';
 import { VariablesPanel } from './VariablesPanel';
 
-const tabs = ['Deployments', 'Variables', 'Settings'] as const;
+const tabs = ['Deployments', 'Logs', 'Variables', 'Settings'] as const;
 type Tab = (typeof tabs)[number];
 
 function duration(start: string | null, end: string | null): string {
@@ -47,6 +48,7 @@ function DeploymentCard({
   busy: boolean;
   onRollback?: () => void;
 }) {
+  const [showLog, setShowLog] = useState(false);
   const chip = deploymentStatusMeta[row.status];
   const inFlight = isDeploymentInFlight(row.status);
   const skipped = row.status === 'cancelled';
@@ -72,13 +74,23 @@ function DeploymentCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setShowLog((value) => !value)}
+            aria-expanded={showLog}
+            className={`rounded border px-2 py-1 text-ui-sm transition-colors hover:bg-surface-2 hover:text-text ${
+              showLog ? 'border-lime/40 text-text' : 'border-line text-text-dim'
+            }`}
+          >
+            {showLog ? 'Hide log' : 'Log'}
+          </button>
           {row.ciRunUrl ? (
             <button
               type="button"
               onClick={() => onOpenRun(row.ciRunUrl ?? '')}
               className="rounded border border-line px-2 py-1 text-ui-sm text-text-dim transition-colors hover:bg-surface-2 hover:text-text"
             >
-              View logs
+              Actions ↗
             </button>
           ) : null}
           {onRollback && !inFlight && !skipped ? (
@@ -117,6 +129,22 @@ function DeploymentCard({
                 : 'Deployment successful'}
         </span>
       </div>
+
+      {/* nodock's own deploy log: pull, start, health, switch. Build output is in Actions. */}
+      {showLog ? (
+        <div className="flex h-[220px] flex-col p-3">
+          <LogViewer
+            key={`${row.id}:${row.status}`}
+            url={`/api/deployments/${row.id}/logs/stream`}
+            empty={
+              row.status === 'queued'
+                ? 'waiting for GitHub Actions to report back…'
+                : 'no deploy log for this deployment'
+            }
+            maxLines={400}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -344,6 +372,27 @@ export function ServicePanel({
               </>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {tab === 'Logs' ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-2 p-4">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-wide text-text-dim">
+              runtime · {link?.branch ?? '—'}
+            </span>
+            <span className="font-mono text-mono-xs text-text-dim">{host || 'no host'}</span>
+          </div>
+          <LogViewer
+            key={`${serviceId}:${link?.environmentId ?? ''}`}
+            url={
+              link
+                ? `/api/services/${serviceId}/envs/${link.environmentId}/logs/stream?tail=300`
+                : null
+            }
+            empty="nothing running yet — deploy this service first"
+            maxLines={800}
+          />
         </div>
       ) : null}
 

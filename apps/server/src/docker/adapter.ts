@@ -34,6 +34,16 @@ export interface DockerAdapter {
   exposedPorts?(image: string): Promise<number[]>;
   /** Tail of the container's stdout/stderr, used to explain a failed health check. */
   logs?(name: string, tailLines: number): Promise<string>;
+  /**
+   * Follow a running container's output. Resolves when the container stops or the
+   * signal aborts — the caller aborts when the log viewer disconnects.
+   */
+  logsFollow?(
+    name: string,
+    tailLines: number,
+    onLine: (line: string) => void | Promise<void>,
+    signal: AbortSignal,
+  ): Promise<void>;
   stop(name: string, graceSeconds: number): Promise<void>;
   remove(name: string): Promise<void>;
 }
@@ -247,6 +257,45 @@ export function createDockerCli(run: typeof Bun.spawn = Bun.spawn): DockerAdapte
       ]);
       await child.exited;
       return `${out}${err}`.trim().slice(-1200);
+    },
+
+    async logsFollow(name, tailLines, onLine, signal) {
+      const child = run(['docker', 'logs', '--follow', '--tail', String(tailLines), name], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        stdin: 'ignore',
+      });
+
+      const stop = () => child.kill();
+      signal.addEventListener('abort', stop, { once: true });
+
+      // `docker logs -f` writes the app's stdout and stderr on separate fds; they
+      // are read concurrently and interleaved as they arrive.
+      const pump = async (stream: ReadableStream<Uint8Array>) => {
+        const decoder = new TextDecoder();
+        let pending = '';
+        for await (const chunk of stream) {
+          pending += decoder.decode(chunk, { stream: true });
+          const lines = pending.split('\n');
+          pending = lines.pop() ?? '';
+          for (const line of lines) {
+            if (signal.aborted) return;
+            // Awaiting here is the backpressure: a slow client slows the reader
+            // instead of growing an unbounded queue in memory.
+            // eslint-disable-next-line no-await-in-loop
+            await onLine(line);
+          }
+        }
+        if (pending && !signal.aborted) await onLine(pending);
+      };
+
+      try {
+        await Promise.all([pump(child.stdout), pump(child.stderr)]);
+        await child.exited;
+      } finally {
+        signal.removeEventListener('abort', stop);
+        if (signal.aborted) child.kill();
+      }
     },
 
     async stop(name, graceSeconds) {

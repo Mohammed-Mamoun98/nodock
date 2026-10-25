@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { createGitHubClient, type GitHubClient } from './auth/github';
 import { createCaddyAdminFromConfig, type CaddyAdmin } from './caddy/admin';
+import { createDeployLogs, type DeployLogs } from './deploy/deploy-log';
 import { createDockerCli, type DockerAdapter } from './docker/adapter';
 import { registerAuthRoutes } from './auth/routes';
 import type { Config } from './config';
@@ -9,6 +10,7 @@ import { registerCaddyRoutes } from './caddy/routes';
 import { apiError } from './http';
 import { registerCiCallbacks, registerCiRoutes } from './routes/ci';
 import { registerGitHubRoutes } from './routes/github';
+import { registerLogRoutes } from './routes/logs';
 import { registerProjectRoutes } from './routes/projects';
 import { registerServiceRoutes } from './routes/services';
 import { registerVariableRoutes } from './routes/variables';
@@ -23,6 +25,8 @@ export interface AppDeps {
   /** Injected in tests: no real Docker or Caddy needed. */
   docker?: DockerAdapter;
   admin?: CaddyAdmin | null;
+  /** Deploy-log sink; defaults to `<data>/logs`. */
+  logs?: DeployLogs;
   /** Injected in tests so session expiry is deterministic. */
   now?: () => number;
   /** Injected in tests; defaults to process start. */
@@ -68,6 +72,7 @@ export function createApp(deps: AppDeps) {
   // CI callbacks authenticate with a repo-scoped bearer token, not a session, so
   // they must be registered before the session guard.
   const docker = deps.docker ?? createDockerCli();
+  const logs = deps.logs ?? createDeployLogs(config.paths.logsDir);
   const admin = deps.admin === undefined ? createCaddyAdminFromConfig(config.caddy) : deps.admin;
 
   registerCiCallbacks(app, {
@@ -76,6 +81,7 @@ export function createApp(deps: AppDeps) {
     github: deps.github ?? createGitHubClient(),
     docker,
     admin: admin ?? undefined,
+    logs,
     now: deps.now,
   });
 
@@ -114,6 +120,7 @@ export function createApp(deps: AppDeps) {
     github: deps.github ?? createGitHubClient(),
   });
   registerVariableRoutes(app, { config, db });
+  registerLogRoutes(app, { config, db, docker, logs, now: deps.now });
 
   // Everything still unrouted behind the guard returns an explicit 501, not a silent SPA fallback.
   app.all('/api/*', (c) => {
