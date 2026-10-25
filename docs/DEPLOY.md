@@ -5,7 +5,7 @@ Written for `tenorlabs.dev`. Change the two hostnames if you prefer different on
 ## Install: pull an image, do not clone the repo
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Mohammed-Mamoun98/nodock/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/malshaer03/nodock/main/scripts/install.sh | sudo bash
 ```
 
 The installer creates `/opt/nodock/` holding exactly three files — `compose.yml`, `Caddyfile`,
@@ -134,7 +134,7 @@ Do **not** enable "expiring user tokens" — see `docs/research/github-caddy-fac
 NODOCK_SECRET=<openssl rand -hex 32>     # never reuse the dev secret
 GITHUB_CLIENT_ID=<prod app client id>
 GITHUB_CLIENT_SECRET=<prod app client secret>
-ADMIN_GITHUB_LOGIN=Mohammed-Mamoun98
+ADMIN_GITHUB_LOGIN=malshaer03
 NODOCK_URL=https://panel.tenorlabs.dev
 BASE_DOMAIN=apps.tenorlabs.dev
 ACME_EMAIL=<a real inbox>
