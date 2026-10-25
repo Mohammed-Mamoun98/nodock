@@ -1,0 +1,43 @@
+name: ci
+
+# The same command a contributor runs: `bun run verify`. Also called by deploy.yml
+# (workflow_call) so a commit cannot reach the VPS without passing it, however it
+# landed on main.
+on:
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Format
+        run: bun run fmt:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Tests
+        run: bun test
+
+      - name: Web build + render smoke
+        run: bun run smoke:web

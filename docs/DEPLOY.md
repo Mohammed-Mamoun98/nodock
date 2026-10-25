@@ -24,6 +24,49 @@ docker compose -f /opt/nodock/compose.yml pull && docker compose -f /opt/nodock/
 Roll back by pinning the previous tag — the data volume is untouched by a downgrade unless the
 newer release migrated the schema forward.
 
+## Auto-deploy the panel from `main`
+
+`.github/workflows/deploy.yml` runs on every push to `main`: it runs the same `bun run verify`
+as a PR (`ci.yml`, called via `workflow_call`), builds the image **on the runner** and pushes
+`ghcr.io/<owner>/nodock:sha-<commit>` plus `:main`, then SSHes to the box and runs
+`scripts/self-update.sh`. That script pulls the image, recreates only the `nodock` container,
+waits for `/healthz`, and restores the previous image if it does not answer. `vite build`
+never runs on the VPS.
+
+On the box (one time):
+
+```bash
+ssh-keygen -t ed25519 -C nodock-deploy -f ~/.ssh/nodock_deploy -N ''
+# the deploy user needs docker and write access to the checkout
+cat ~/.ssh/nodock_deploy.pub >> /root/.ssh/authorized_keys   # on the box
+```
+
+In the repo (one time):
+
+```bash
+gh secret set VPS_HOST --body <box ip or hostname>
+gh secret set VPS_USER --body root            # optional, default root
+gh secret set VPS_SSH_KEY < ~/.ssh/nodock_deploy
+gh variable set PANEL_URL --body https://panel.tenorlabs.dev   # external health check
+gh variable set NODOCK_DIR --body /opt/nodock-src              # optional, this is the default
+```
+
+Without `VPS_HOST` and `VPS_SSH_KEY` the deploy job skips itself with a notice instead of
+failing, so forks stay green. The deploy job uses the `production` environment, so required
+reviewers can be added later without editing the file.
+
+Manual, on the box:
+
+```bash
+./scripts/self-update.sh sha-1a2b3c4   # deploy a specific build
+./scripts/self-update.sh --rollback    # back to the image that ran before
+```
+
+Two guards worth knowing: the SSH step refuses to deploy when the checkout on the box has
+uncommitted changes, and it `git reset --hard`s to the exact commit the image was built from.
+If you would rather ship on tags than on every merge, change `on.push.branches` in
+`deploy.yml` to `on.push.tags: ['v*']`.
+
 **Upgrading from a release that used the TCP admin API** (anything before this change): the
 image, `compose.yml` and `Caddyfile` must move together, because the admin listener moved from
 `:2019` to the `caddy_admin` socket. Re-run the installer (it refetches both files and keeps

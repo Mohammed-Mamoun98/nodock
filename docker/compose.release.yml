@@ -23,7 +23,8 @@ services:
     restart: unless-stopped
 
   nodock:
-    image: ghcr.io/mohammed-mamoun98/nodock:${NODOCK_VERSION:-latest}
+    # NODOCK_IMAGE lets scripts/self-update.sh pin an exact build (and roll back to one).
+    image: ${NODOCK_IMAGE:-ghcr.io/mohammed-mamoun98/nodock:${NODOCK_VERSION:-latest}}
     env_file: ./.env
     environment:
       DATA_DIR: /data
