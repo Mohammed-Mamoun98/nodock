@@ -1,0 +1,13 @@
+# Dev bootstrap: identical admin wiring to production, so the deploy path exercised
+# in dev is the one that ships. The dev stack publishes Caddy on :8080 and lets it
+# render sites from the DB like production does.
+{
+	admin unix//run/caddy/admin.sock
+	on_demand_tls {
+		ask http://nodock:3000/internal/caddy/ask
+	}
+}
+
+:80 {
+	respond "nodock dev proxy: no route for that host" 404
+}

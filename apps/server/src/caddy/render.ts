@@ -26,10 +26,40 @@ export interface CaddyConfigInput {
   /** Service hosts, in deterministic order. */
   routes: CaddyRoute[];
   askUrl?: string;
+  /**
+   * Admin API on a unix socket (preferred). When set, no TCP admin listener
+   * exists at all, which is the only way a container on the app network cannot
+   * reach it.
+   */
+  adminSocket?: string | null;
+  /** Fallback only: TCP admin, reachable by anything sharing a network with Caddy. */
+  adminUrl?: string | null;
+  /** Health-check probes, served on the private listener and nothing else. */
+  probes?: CaddyProbe[];
 }
+
+/**
+ * A container published on no port is still reachable from the proxy's networks.
+ * These probes exist so the deploy pipeline can health-check a *new* container
+ * while the public route still points at the old one: nodock itself never joins
+ * the app network. The listener exposes nothing the public route does not.
+ */
+export interface CaddyProbe {
+  /** Deployment id; becomes the `/probe/<id>/` prefix. */
+  id: string;
+  /** `container:port` on the app network. */
+  upstream: string;
+}
+
+export const PROBE_PORT = 8099;
 
 const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 const UPSTREAM = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?:[0-9]{1,5}$/;
+/** Deployment ids are uuids; anything else is not ours to render. */
+const PROBE_ID = /^[a-z0-9-]{1,64}$/;
+const SOCKET_PATH = /^\/[A-Za-z0-9._\-/]+$/;
+/** `host:port` for the TCP admin fallback — an IP, so it is not an UPSTREAM. */
+const ADMIN_ADDR = /^[A-Za-z0-9.:[\]]+:[0-9]{1,5}$/;
 
 /**
  * The Caddyfile is a text format, so a hostile host or container name would be
@@ -53,6 +83,44 @@ export function assertSafeUpstream(upstream: string): string {
     throw new Error(`Refusing to render an out-of-range port: ${port}`);
   }
   return upstream;
+}
+
+/** The admin binding goes into a text file too, so it gets the same treatment. */
+export function assertSafeSocketPath(path: string): string {
+  if (!SOCKET_PATH.test(path) || path.includes('..') || path.length > 200) {
+    throw new Error(`Refusing to render an unsafe admin socket path: ${JSON.stringify(path)}`);
+  }
+  return path;
+}
+
+function adminBinding(input: CaddyConfigInput): string {
+  // Socket wins: with no TCP listener there is nothing for a container to reach.
+  if (input.adminSocket) return `admin unix/${assertSafeSocketPath(input.adminSocket)}`;
+
+  const address = input.adminUrl ?? '0.0.0.0:2019';
+  const port = Number(address.split(':').pop());
+  if (!ADMIN_ADDR.test(address) || !(port > 0 && port <= 65535)) {
+    throw new Error(`Refusing to render an unsafe admin address: ${JSON.stringify(address)}`);
+  }
+  return `admin ${address}`;
+}
+
+function probeBlock(probes: CaddyProbe[]): string | null {
+  if (probes.length === 0) return null;
+
+  const lines = [`:${PROBE_PORT} {`];
+  for (const probe of probes) {
+    if (!PROBE_ID.test(probe.id)) {
+      throw new Error(`Refusing to render an unsafe probe id: ${JSON.stringify(probe.id)}`);
+    }
+    lines.push(
+      `\thandle_path /probe/${probe.id}/* {`,
+      `\t\treverse_proxy ${assertSafeUpstream(probe.upstream)}`,
+      '\t}',
+    );
+  }
+  lines.push('\trespond "nodock: unknown probe" 404', '}');
+  return lines.join('\n');
 }
 
 export function renderCaddyfile(input: CaddyConfigInput): string {
@@ -112,12 +180,15 @@ export function renderCaddyfile(input: CaddyConfigInput): string {
   // Caddy ask for certificates for arbitrary SNI, and /ask would 403 every time.
   blocks.push([':80 {', '\trespond "nodock: unknown host" 404', '}'].join('\n'));
 
+  const probes = probeBlock(input.probes ?? []);
+  if (probes) blocks.push(probes);
+
   // /load replaces the ENTIRE config, so the admin binding has to be restated
   // every time. Without it Caddy falls back to 127.0.0.1:2019 and the first
   // reconcile silently locks nodock out of its own proxy.
   const globals = [
     '{',
-    '\tadmin 0.0.0.0:2019',
+    `\t${adminBinding(input)}`,
     '\temail {$ACME_EMAIL}',
     '\ton_demand_tls {',
     `\t\task ${askUrl}`,
@@ -138,6 +209,7 @@ export function hostsIn(config: string): string[] {
       .map((line) => line.trim())
       .filter((line) => line.endsWith('{') && line !== '{')
       .map((line) => line.slice(0, -1).trim())
-      .filter((host) => host !== ':80')
+      // `:80` and the probe listener are port listeners, not hosts.
+      .filter((host) => !host.startsWith(':'))
   );
 }

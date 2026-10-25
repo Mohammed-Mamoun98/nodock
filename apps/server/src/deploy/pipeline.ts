@@ -100,6 +100,9 @@ export async function runDeployment(
       .run();
   };
 
+  /** True once a temporary probe route is loaded, so its removal is the only cleanup. */
+  let probeLoaded = false;
+
   try {
     setStatus('pulling', { startedAt: new Date(now()) });
     log(deploymentId, `pulling ${deployment.imageRef}`);
@@ -151,13 +154,41 @@ export async function runDeployment(
     rmSync(envFile, { force: true });
 
     setStatus('healthchecking');
-    const healthUrl = `http://${name}:${port}${serviceEnv.healthPath ?? '/'}`;
+    const healthPath = serviceEnv.healthPath ?? '/';
+    let healthUrl = `http://${name}:${port}${healthPath}`;
+
+    // nodock deliberately does not join the app network, so the proxy is the only
+    // way to reach a container's HTTP port. The probe route exists for the length
+    // of this health check only: the public route keeps serving the old container
+    // until the new one answers.
+    if (admin && config.caddy.probeUrl) {
+      try {
+        await admin.load(
+          renderCurrentConfig({
+            config,
+            db,
+            probe: { deploymentId: deployment.id, upstream: `${name}:${port}` },
+          }),
+        );
+        probeLoaded = true;
+      } catch (error) {
+        await docker.remove(name).catch(() => {});
+        fail(db, deploymentId, `Caddy rejected the health-check route: ${errorText(error)}`, now());
+        return 'failed';
+      }
+      healthUrl = `${config.caddy.probeUrl}/probe/${deployment.id}${healthPath}`;
+      log(deploymentId, `probing ${healthUrl}`);
+    }
+
     const healthy = await (deps.health ?? defaultHealth)(healthUrl);
     if (!healthy) {
       // The container's own output is the only useful evidence here: wrong port,
       // crashed process, or bound to 127.0.0.1 all look identical from outside.
       const tail = docker.logs ? await docker.logs(name, 15).catch(() => '') : '';
       await docker.remove(name).catch(() => {});
+      // Only re-render when the probe route is the thing that has to go: with no
+      // probe, the route config was never touched and must stay untouched.
+      if (probeLoaded) await reconcileClean(deps);
       fail(
         db,
         deploymentId,
@@ -200,9 +231,14 @@ export async function runDeployment(
     return 'live';
   } catch (error) {
     await docker.remove(name).catch(() => {});
-    fail(db, deploymentId, error instanceof Error ? error.message : String(error), now());
+    if (probeLoaded) await reconcileClean(deps);
+    fail(db, deploymentId, errorText(error), now());
     return 'failed';
   }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
@@ -294,6 +330,8 @@ async function switchRoute(deps: DeployDeps, host: string, upstream: string): Pr
     dashboardHost: new URL(deps.config.url).host,
     dashboardUpstream: 'nodock:3000',
     askUrl: deps.config.caddy.askUrl,
+    adminSocket: deps.config.caddy.adminSocket,
+    adminUrl: deps.config.caddy.adminUrl,
     routes: buildRoutes(deps.db, { host, upstream }),
   });
 

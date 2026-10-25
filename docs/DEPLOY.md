@@ -24,6 +24,12 @@ docker compose -f /opt/nodock/compose.yml pull && docker compose -f /opt/nodock/
 Roll back by pinning the previous tag — the data volume is untouched by a downgrade unless the
 newer release migrated the schema forward.
 
+**Upgrading from a release that used the TCP admin API** (anything before this change): the
+image, `compose.yml` and `Caddyfile` must move together, because the admin listener moved from
+`:2019` to the `caddy_admin` socket. Re-run the installer (it refetches both files and keeps
+your `.env`), then `docker compose up -d`. App containers stay on the unchanged `nodock`
+network, so running services keep serving; only nodock leaves it, for `nodock_control`.
+
 | Role     | Host                   | Serves                                                                                              |
 | -------- | ---------------------- | --------------------------------------------------------------------------------------------------- |
 | Panel    | `panel.tenorlabs.dev`  | the nodock UI + API (this is `NODOCK_URL`)                                                          |
@@ -106,11 +112,11 @@ docker compose -f /opt/nodock/compose.yml exec nodock bun scripts/doctor.ts
 ```
 
 It verifies, in the order things actually break: GitHub OAuth credentials, the admin
-allowlist, `NODOCK_URL`, Caddy's admin URL, the GHCR token (warning only), database
-writes to `/data`, the Docker daemon, the shared `nodock` network, Caddy's admin API, the
-certificate gate (`/ask` must allow the panel host), and DNS for both the panel host and
-the `*.BASE_DOMAIN` wildcard. DNS problems are warnings, not blockers — records take time
-to propagate.
+allowlist, `NODOCK_URL`, the Caddy admin endpoint (the unix socket, or a warning when it is
+TCP), the health probe path, the GHCR token (warning only), database writes to `/data`, the
+Docker daemon, the shared `nodock` network, Caddy's admin API, the certificate gate (`/ask`
+must allow the panel host), and DNS for both the panel host and the `*.BASE_DOMAIN`
+wildcard. DNS problems are warnings, not blockers — records take time to propagate.
 
 The same report is available at `GET /api/doctor` (HTTP 503 when a check fails).
 
@@ -130,5 +136,6 @@ The same report is available at `GET /api/doctor` (HTTP 503 when a check fails).
 - [ ] Sign-in completes and the session survives a browser restart (30-day cookie)
 - [ ] A service host gets a cert on first request, not before (on-demand)
 - [ ] `docker stats` idle: nodock ≤80 MB, Caddy ≤50 MB
-- [ ] Ports 3000 and 2019 are **not** reachable from outside (`ss -lntp` on the host)
+- [ ] Ports 3000 and 2019 are **not** reachable from outside (`ss -lntp` on the host); since
+      the admin API moved to a unix socket, nothing should be listening on 2019 at all
 - [ ] `/var/lib/docker` growth is bounded (image + log pruning active)

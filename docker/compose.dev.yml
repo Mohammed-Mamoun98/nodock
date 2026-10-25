@@ -1,6 +1,10 @@
-# Dev: API runs on the host with `bun --watch` (or in this container), Vite proxies
-# /api, /auth, /webhooks to it, and app containers join the same `nodock` network so
+# Dev: API runs with `bun --watch` in this container, Vite proxies /api, /auth,
+# /webhooks to it, and app containers join the same `nodock` (edge) network so
 # name-based routing behaves exactly as in production.
+#
+# The networks and the admin socket are wired exactly like production, so the
+# deploy path exercised here is the one that ships:
+#   edge (nodock) + control (nodock_control); admin only over caddy_admin.
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -8,7 +12,8 @@ services:
     volumes:
       - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
       - caddy_dev_data:/data
-    networks: [nodock]
+      - caddy_admin:/run/caddy
+    networks: [edge, control]
     restart: unless-stopped
 
   nodock:
@@ -20,18 +25,24 @@ services:
       DATA_DIR: /data
       DOCKER_CONFIG: /data/docker
       PORT: '3000'
+      CADDY_ADMIN_SOCKET: /run/caddy/admin.sock
+      CADDY_PROBE_URL: http://caddy:8099
     ports: ['3000:3000']
     volumes:
       - ..:/app
       - nodock_dev_data:/data
+      - caddy_admin:/run/caddy
       - /var/run/docker.sock:/var/run/docker.sock
-    networks: [nodock]
+    networks: [control]
     restart: unless-stopped
 
 networks:
-  nodock:
+  edge:
     name: nodock
+  control:
+    name: nodock_control
 
 volumes:
   caddy_dev_data: {}
+  caddy_admin: {}
   nodock_dev_data: {}

@@ -22,6 +22,23 @@ const envSchema = z.object({
   DOCKER_NETWORK: z.string().min(1).default('nodock'),
   /** Empty disables Caddy reconciliation (host runs without a proxy). */
   CADDY_ADMIN_URL: z.string().default(''),
+  /**
+   * Preferred over CADDY_ADMIN_URL: the admin API on a unix socket shared with
+   * Caddy. A TCP admin listener can be reached by any container on the same
+   * docker network, and rewriting the config is root-equivalent.
+   */
+  CADDY_ADMIN_SOCKET: z
+    .string()
+    .default('')
+    .refine(
+      (value) => value === '' || value.startsWith('/'),
+      'Use an absolute path, e.g. /run/caddy/admin.sock',
+    ),
+  /**
+   * Where nodock reaches the proxy's private health-check listener, e.g.
+   * http://caddy:8099. Empty = probe the container directly over the app network.
+   */
+  CADDY_PROBE_URL: z.string().default(''),
   CADDY_ASK_URL: z.string().default('http://nodock:3000/internal/caddy/ask'),
   /** Extra origins allowed to mutate (the Vite dev server, mainly). Same-origin is always allowed. */
   ALLOWED_ORIGINS: z.string().default(''),
@@ -40,7 +57,12 @@ export interface Config {
   port: number;
   accessLog: boolean;
   dockerNetwork: string;
-  caddy: { adminUrl: string | null; askUrl: string };
+  caddy: {
+    adminUrl: string | null;
+    adminSocket: string | null;
+    probeUrl: string | null;
+    askUrl: string;
+  };
   /** Normalised extra origins permitted to send mutating requests. */
   allowedOrigins: string[];
   ghcr: { user?: string; token?: string };
@@ -83,6 +105,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dockerNetwork: e.DOCKER_NETWORK,
     caddy: {
       adminUrl: e.CADDY_ADMIN_URL ? e.CADDY_ADMIN_URL.replace(/\/$/, '') : null,
+      adminSocket: e.CADDY_ADMIN_SOCKET || null,
+      probeUrl: e.CADDY_PROBE_URL ? e.CADDY_PROBE_URL.replace(/\/$/, '') : null,
       askUrl: e.CADDY_ASK_URL,
     },
     allowedOrigins: e.ALLOWED_ORIGINS.split(',')

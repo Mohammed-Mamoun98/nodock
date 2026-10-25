@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { createGitHubClient, type GitHubClient } from './auth/github';
-import { createCaddyAdmin, type CaddyAdmin } from './caddy/admin';
+import { createCaddyAdminFromConfig, type CaddyAdmin } from './caddy/admin';
 import { createDockerCli, type DockerAdapter } from './docker/adapter';
 import { registerAuthRoutes } from './auth/routes';
 import type { Config } from './config';
@@ -68,12 +68,7 @@ export function createApp(deps: AppDeps) {
   // CI callbacks authenticate with a repo-scoped bearer token, not a session, so
   // they must be registered before the session guard.
   const docker = deps.docker ?? createDockerCli();
-  const admin =
-    deps.admin === undefined
-      ? config.caddy.adminUrl
-        ? createCaddyAdmin(config.caddy.adminUrl)
-        : null
-      : deps.admin;
+  const admin = deps.admin === undefined ? createCaddyAdminFromConfig(config.caddy) : deps.admin;
 
   registerCiCallbacks(app, {
     config,

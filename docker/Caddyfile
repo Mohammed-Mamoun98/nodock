@@ -1,10 +1,14 @@
 # Bootstrap config only. Every site block is rendered from the DB and pushed via
 # the admin API, so this file must stay free of routes.
 #
+# The admin API is on a unix socket, not TCP: it is unauthenticated and rebuilding
+# the routing table is root-equivalent, so no container that shares a network with
+# Caddy may be able to reach it. Only nodock mounts this socket (see compose.yml).
+#
 # Each rendered route carries its own `encode zstd gzip` and disabled access log;
 # Caddy access logs are off by default because they cost CPU and disk on a small box.
 {
-	admin 0.0.0.0:2019
+	admin unix//run/caddy/admin.sock
 	email {$ACME_EMAIL}
 
 	on_demand_tls {

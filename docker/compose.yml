@@ -1,5 +1,17 @@
 # Contributor compose: pulls the published image, like an install, but from this checkout.
 # To build from source instead, add -f compose.build.yml.
+#
+# Two docker networks, and the split is the point:
+#   edge     (nodock)          caddy + app containers. Apps talk to the proxy, nothing else.
+#   control  (nodock_control)  caddy + nodock only. The panel and the admin socket live here.
+#
+# nodock is NOT on `edge`, so a compromised app cannot reach the panel API or the
+# proxy's admin API. Caddy's admin is a unix socket shared through `caddy_admin`,
+# so no TCP admin listener exists at all. Health checks reach new containers through
+# caddy's private probe listener (CADDY_PROBE_URL) instead of a shared network.
+#
+# The edge network keeps its old name `nodock` on purpose: app containers created by
+# earlier versions stay attached and keep serving through an upgrade.
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -9,7 +21,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [nodock]
+      - caddy_admin:/run/caddy
+    networks: [edge, control]
     restart: unless-stopped
 
   nodock:
@@ -18,21 +31,26 @@ services:
     environment:
       DATA_DIR: /data
       DOCKER_CONFIG: /data/docker
-      CADDY_ADMIN_URL: http://caddy:2019
+      CADDY_ADMIN_SOCKET: /run/caddy/admin.sock
+      CADDY_PROBE_URL: http://caddy:8099
     volumes:
       - nodock_data:/data
+      - caddy_admin:/run/caddy
       - /var/run/docker.sock:/var/run/docker.sock
-    networks: [nodock]
+    networks: [control]
     depends_on: [caddy]
     restart: unless-stopped
     # The control plane gets a ceiling so a memory bug degrades the panel, not the host.
     mem_limit: 300m
 
 networks:
-  nodock:
+  edge:
     name: nodock
+  control:
+    name: nodock_control
 
 volumes:
   caddy_data: {}
   caddy_config: {}
+  caddy_admin: {}
   nodock_data: {}
