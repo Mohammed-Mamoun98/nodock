@@ -32,7 +32,7 @@ fi
 exit 0
 `;
 
-const TAG_PREFIX = 'ghcr.io/mohammed-mamoun98/nodock:';
+const TAG_PREFIX = 'ghcr.io/malshaer03/nodock:';
 
 function harness(running: string) {
   const dir = mkdtempSync(join(tmpdir(), 'nodock-selfupdate-'));
