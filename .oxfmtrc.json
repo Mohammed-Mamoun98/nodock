@@ -5,10 +5,5 @@
   "semi": true,
   "trailingComma": "all",
   "arrowParens": "always",
-  "ignorePatterns": [
-    "**/dist/**",
-    "**/.superdesign/**",
-    "apps/server/drizzle/**",
-    "i-wanna-build-sth-compiled-clock.md"
-  ]
+  "ignorePatterns": ["**/dist/**", "**/.superdesign/**", "apps/server/drizzle/**", "v0-plan.md"]
 }
