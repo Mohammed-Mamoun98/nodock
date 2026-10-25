@@ -52,7 +52,7 @@ If either is empty, stop and fix DNS. If `tenorlabs.dev` has CAA records, they m
 ## 2. Clone
 
 ```bash
-git clone https://github.com/Mohammed-Mamoun98/nodock.git /opt/nodock-src
+git clone https://github.com/malshaer03/nodock.git /opt/nodock-src
 cd /opt/nodock-src
 git log --oneline -1
 ```
@@ -85,7 +85,7 @@ Edit `.env` so it contains exactly:
 NODOCK_SECRET=<paste the generated 64 hex chars>
 GITHUB_CLIENT_ID=<prod app client id>
 GITHUB_CLIENT_SECRET=<prod app client secret>
-ADMIN_GITHUB_LOGIN=Mohammed-Mamoun98
+ADMIN_GITHUB_LOGIN=malshaer03
 NODOCK_URL=https://panel.tenorlabs.dev
 BASE_DOMAIN=apps.tenorlabs.dev
 ACME_EMAIL=you@yourdomain.com
