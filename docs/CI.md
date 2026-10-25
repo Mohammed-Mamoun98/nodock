@@ -3,6 +3,14 @@
 nodock does not build on your VPS. GitHub Actions builds the image; nodock pulls it,
 runs it, and routes to it. This file explains the handshake and every credential involved.
 
+Two logs, two places — worth knowing before you go looking for output:
+
+| You want                                      | Where it is                                                                   |
+| --------------------------------------------- | ----------------------------------------------------------------------------- |
+| what the build did (`docker build` output)    | GitHub Actions; every deployment row links to its run (`Actions ↗`)           |
+| what nodock did (pull, start, health, switch) | the panel: a deployment's **Log** button, streamed from `/data/logs/<id>.log` |
+| what the app is printing right now            | the panel: **Logs** tab, streamed from `docker logs -f`                       |
+
 ## No GitHub App is involved
 
 nodock uses a plain **OAuth App** owned by you (see `docs/DEPLOY.md` §3). Everything in this

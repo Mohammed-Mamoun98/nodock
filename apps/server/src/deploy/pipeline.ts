@@ -7,6 +7,7 @@ import { buildRoutes, renderCurrentConfig } from '../caddy/service';
 import { renderCaddyfile } from '../caddy/render';
 import type { Config } from '../config';
 import type { Db } from '../db/client';
+import type { DeployLogs } from './deploy-log';
 import { deployments, serviceEnvs, services, variables } from '../db/schema';
 import type { DockerAdapter } from '../docker/adapter';
 import { containerName } from '../docker/adapter';
@@ -26,7 +27,8 @@ export interface DeployDeps {
   /** Injectable for tests; resolves once the container answers (or gives up). */
   health?: (url: string) => Promise<boolean>;
   now?: () => number;
-  log?: (deploymentId: string, line: string) => void;
+  /** Deploy log sink; absent in tests that do not care about output. */
+  logs?: DeployLogs;
 }
 
 interface Env {
@@ -44,7 +46,7 @@ export async function runDeployment(
 ): Promise<DeployOutcome> {
   const { config, db, docker, admin } = deps;
   const now = deps.now ?? (() => Date.now());
-  const log = deps.log ?? (() => {});
+  const log = (id: string, line: string) => deps.logs?.append(id, line);
 
   const deployment = db.select().from(deployments).where(eq(deployments.id, deploymentId)).get();
   if (!deployment) return 'skipped';
@@ -104,7 +106,12 @@ export async function runDeployment(
   let probeLoaded = false;
 
   try {
-    setStatus('pulling', { startedAt: new Date(now()) });
+    // Recorded before anything else: the UI needs a path to poll while the deploy
+    // is still running, and the file is created by the first append below.
+    setStatus('pulling', {
+      startedAt: new Date(now()),
+      logPath: deps.logs?.pathFor(deploymentId) ?? null,
+    });
     log(deploymentId, `pulling ${deployment.imageRef}`);
 
     await ensureRegistryLogin(deps);

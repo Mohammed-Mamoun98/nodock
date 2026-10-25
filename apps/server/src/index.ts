@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { createApp } from './app';
 import { createCaddyAdminFromConfig } from './caddy/admin';
+import { createDeployLogs } from './deploy/deploy-log';
 import { reconcileWithRetry } from './caddy/service';
 import { markInterruptedOnBoot, startWatchdog, sweepStaleDeployments } from './deploy/watchdog';
 import { loadConfig } from './config';
@@ -26,7 +27,13 @@ if (existsSync(migrationsFolder)) {
   migrate(db, { migrationsFolder });
 }
 
-const app = createApp({ config, db });
+// Bounded on boot as well as after every deploy: a box whose /data was never
+// pruned should not keep every log ever written.
+const logs = createDeployLogs(config.paths.logsDir);
+const prunedLogs = logs.prune();
+if (prunedLogs > 0) console.log(`[nodock] pruned ${prunedLogs} old deploy log(s)`);
+
+const app = createApp({ config, db, logs });
 
 const indexHtml = join(config.paths.webDir, 'index.html');
 

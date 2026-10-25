@@ -15,6 +15,7 @@ import type { Config } from '../config';
 import type { Db } from '../db/client';
 import { deployments, repoHooks, serviceEnvs, services, users } from '../db/schema';
 import type { CaddyAdmin } from '../caddy/admin';
+import type { DeployLogs } from '../deploy/deploy-log';
 import { runDeployment } from '../deploy/pipeline';
 import type { DockerAdapter } from '../docker/adapter';
 import { apiError, validationError } from '../http';
@@ -29,6 +30,8 @@ export interface CiDeps {
   /** Present in a real install; tests inject fakes. */
   docker?: DockerAdapter;
   admin?: CaddyAdmin;
+  /** Deploy log sink; the pipeline writes pull/start/health output here. */
+  logs?: DeployLogs;
   now?: () => number;
 }
 
@@ -486,11 +489,16 @@ export function registerCiCallbacks(app: Hono, deps: CiDeps): void {
     // pull must not turn into a failed callback.
     if (!failed && deps.docker) {
       void runDeployment(
-        { config, db, docker: deps.docker, admin: deps.admin ?? null },
+        { config, db, docker: deps.docker, admin: deps.admin ?? null, logs: deps.logs },
         auth.payload.buildId,
-      ).catch((error: unknown) => {
-        console.error('[nodock] deploy pipeline failed', error);
-      });
+      )
+        .catch((error: unknown) => {
+          console.error('[nodock] deploy pipeline failed', error);
+        })
+        .finally(() => {
+          // Keeps the log directory bounded without a cron job on the box.
+          deps.logs?.prune();
+        });
     }
 
     return c.json({ ok: true });
