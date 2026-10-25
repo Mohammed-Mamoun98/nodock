@@ -18,6 +18,17 @@ const MAX_FOLLOWERS = 4;
 const MAX_LINE = 8_000;
 /** Poll interval for the deploy log file. Cheap: a stat and a read. */
 const TAIL_MS = 700;
+/**
+ * How long a stream may stay silent before it says something anyway.
+ *
+ * Bun closes an idle socket after ~12s (`idleTimeout`), and so do most proxies in
+ * front of it. A deployment waiting for CI, or an app that only logs on request,
+ * writes nothing for minutes — without this the reader sees "disconnected" and the
+ * log looks broken. Five seconds, not ten: two missed beats still fit in the window.
+ */
+const PING_MS = 5_000;
+/** An SSE comment: the browser ignores it, the socket stays warm. */
+const KEEPALIVE = ': keepalive\n\n';
 
 export interface LogDeps {
   config: Config;
@@ -25,6 +36,8 @@ export interface LogDeps {
   docker?: DockerAdapter;
   logs: DeployLogs;
   now?: () => number;
+  /** Injected in tests so a "quiet stream" case does not take real seconds. */
+  timings?: { tailMs?: number; pingMs?: number };
 }
 
 function offsetFrom(raw: string | undefined): number {
@@ -46,6 +59,8 @@ function offsetFrom(raw: string | undefined): number {
 export function registerLogRoutes(app: Hono, deps: LogDeps): void {
   const { db, docker, logs } = deps;
   const followers = new Set<string>();
+  const tailMs = deps.timings?.tailMs ?? TAIL_MS;
+  const pingMs = deps.timings?.pingMs ?? PING_MS;
 
   app.get('/api/deployments/:id/logs', (c) => {
     const deployment = db
@@ -89,6 +104,7 @@ export function registerLogRoutes(app: Hono, deps: LogDeps): void {
         stream.onAbort(() => {
           closed = true;
         });
+        let lastWrite = Date.now();
 
         for (;;) {
           if (closed) return;
@@ -107,6 +123,7 @@ export function registerLogRoutes(app: Hono, deps: LogDeps): void {
           // parallelism to win here — it is one file and one client.
           /* eslint-disable no-await-in-loop */
           if (text) {
+            lastWrite = Date.now();
             await stream.writeSSE({ event: 'chunk', data: JSON.stringify({ text }) });
             continue; // drain what is on disk before sleeping
           }
@@ -119,7 +136,15 @@ export function registerLogRoutes(app: Hono, deps: LogDeps): void {
             return;
           }
 
-          await stream.sleep(TAIL_MS);
+          await stream.sleep(tailMs);
+          if (closed) return;
+
+          // A queued deployment writes nothing until CI reports back; say something
+          // anyway so the connection outlives the idle timeout.
+          if (Date.now() - lastWrite >= pingMs) {
+            lastWrite = Date.now();
+            await stream.write(KEEPALIVE);
+          }
           /* eslint-enable no-await-in-loop */
         }
       },
@@ -179,6 +204,15 @@ export function registerLogRoutes(app: Hono, deps: LogDeps): void {
         const abort = new AbortController();
         stream.onAbort(() => abort.abort());
 
+        let lastWrite = Date.now();
+        // `docker logs -f` only speaks when the app does: a quiet app would lose the
+        // connection to the idle timeout mid-read. One timer per viewer, not per line.
+        const pinger = setInterval(() => {
+          if (Date.now() - lastWrite < pingMs) return;
+          lastWrite = Date.now();
+          stream.write(KEEPALIVE).catch(() => abort.abort());
+        }, pingMs);
+
         try {
           await stream.writeSSE({
             event: 'start',
@@ -189,6 +223,7 @@ export function registerLogRoutes(app: Hono, deps: LogDeps): void {
             container,
             tail,
             async (line) => {
+              lastWrite = Date.now();
               await stream.writeSSE({
                 event: 'line',
                 data: JSON.stringify({ line: line.slice(0, MAX_LINE) }),
@@ -202,6 +237,7 @@ export function registerLogRoutes(app: Hono, deps: LogDeps): void {
             data: JSON.stringify({ reason: 'container stopped' }),
           });
         } finally {
+          clearInterval(pinger);
           followers.delete(key);
         }
       },
