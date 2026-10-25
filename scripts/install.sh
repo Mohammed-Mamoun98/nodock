@@ -2,13 +2,13 @@
 # nodock installer: creates a self-contained directory holding compose.yml,
 # Caddyfile and .env, then starts the stack. The user never clones this repo.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Mohammed-Mamoun98/nodock/main/scripts/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/malshaer03/nodock/main/scripts/install.sh | sudo bash
 #
 # Override with env vars: NODOCK_DIR, NODOCK_REPO, NODOCK_REF, NODOCK_VERSION.
 set -euo pipefail
 
 NODOCK_DIR="${NODOCK_DIR:-/opt/nodock}"
-NODOCK_REPO="${NODOCK_REPO:-Mohammed-Mamoun98/nodock}"
+NODOCK_REPO="${NODOCK_REPO:-malshaer03/nodock}"
 NODOCK_REF="${NODOCK_REF:-main}"
 RAW="https://raw.githubusercontent.com/${NODOCK_REPO}/${NODOCK_REF}"
 
