@@ -12,7 +12,7 @@
 # non-zero, so the workflow (and you) see it.
 set -eu
 
-IMAGE_REPO="${IMAGE_REPO:-ghcr.io/mohammed-mamoun98/nodock}"
+IMAGE_REPO="${IMAGE_REPO:-ghcr.io/malshaer03/nodock}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker/compose.yml}"
 STATE_DIR="${STATE_DIR:-.deploy}"
 HEALTH_ATTEMPTS="${HEALTH_ATTEMPTS:-30}"
