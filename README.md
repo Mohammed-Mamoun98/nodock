@@ -54,6 +54,47 @@ CPU/RAM graphs, PR previews, teams, multi-server. Also not covered: an app that 
 broken_ (500s, wrong port) still looks healthy — that needs each service's health path polled
 continuously.
 
+## Backups — not implemented, decision recorded
+
+`DATA_DIR/backups` exists in the config and nothing writes to it. Nothing on the box protects
+you from losing the box.
+
+What is at risk is small and precise. Images live in GHCR, code lives in GitHub, and
+`scripts/install.sh` rebuilds a host in about ten minutes. The irreplaceable state is the SQLite
+database plus `NODOCK_SECRET` in `.env`: services, releases, and the encrypted variables. So
+losing `/data` costs configuration, not code — but losing `NODOCK_SECRET` makes the variables in
+any restored database unreadable. A backup that skips the key is a backup of nothing.
+
+Planned shape, smallest first:
+
+1. **Droplet backups.** Weekly, whole disk, enabled at install. The only layer that covers total
+   loss including `.env`. `doctor` cannot see the provider account, so it can only remind.
+2. **Nightly snapshot to object storage.** `VACUUM INTO` a scratch file, tar it with `.env`,
+   encrypt, upload to S3-compatible storage, retain by count. Restores onto a fresh droplet in
+   minutes instead of a rebuild, with a day of RPO.
+3. **Credentials.** S3 keys in nodock's own encrypted variables — the same AES-256-GCM path as
+   everything else — with `NODOCK_SECRET` and the S3 keys kept in 1Password. Letting nodock read
+   1Password directly would put the `op` binary and a service-account token inside the container:
+   a new dependency and a long-lived credential, in exchange for storing two values that are
+   already encrypted at rest. Not worth it.
+4. **A rehearsed restore.** `docs/RESTORE.md`, run once against a throwaway droplet. An untested
+   backup is a wish.
+
+Until then, by hand, on the box that has the data:
+
+```bash
+cd /opt/nodock
+sudo docker compose stop nodock                  # a consistent SQLite copy, not a WAL mid-write
+sudo docker compose cp nodock:/data ./nodock-$(date +%F)
+sudo docker compose start nodock
+sudo cp .env ./nodock-$(date +%F)/.env           # the key lives outside /data, so copy it too
+scp -r ./nodock-$(date +%F) you@elsewhere:       # anything off the box counts
+rm -rf ./nodock-$(date +%F)
+```
+
+And put `NODOCK_SECRET` in 1Password the day you install. It is generated once, printed nowhere,
+and is the only way back into the variables.
+
 ## Layout
 
 ```
