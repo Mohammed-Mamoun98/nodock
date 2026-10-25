@@ -637,3 +637,93 @@ describe('repo cleanup on delete', () => {
     expect(db.select().from(repoHooks).all()).toHaveLength(1);
   });
 });
+
+describe('health checks without joining the app network', () => {
+  const viaProxy = loadConfig({
+    NODOCK_SECRET: 'x'.repeat(32),
+    NODOCK_URL: 'https://panel.example.com',
+    BASE_DOMAIN: 'apps.example.com',
+    DATA_DIR: '/tmp/nodock-pipeline-test',
+    ADMIN_GITHUB_LOGIN: 'mohammed',
+    GITHUB_CLIENT_ID: 'id',
+    GITHUB_CLIENT_SECRET: 'secret',
+    CADDY_ADMIN_SOCKET: '/run/caddy/admin.sock',
+    CADDY_PROBE_URL: 'http://caddy:8099',
+  });
+
+  test('the probe route exists only for the health check, then the real switch happens', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db, { liveContainer: 'nodock-api-prod-old00000' });
+    const { docker, calls } = fakeDocker();
+    const { admin, loads } = fakeAdmin();
+    const healths: string[] = [];
+
+    const outcome = await runDeployment(
+      {
+        config: viaProxy,
+        db,
+        docker,
+        admin,
+        health: async (url) => {
+          healths.push(url);
+          return true;
+        },
+      },
+      pending.id,
+    );
+
+    expect(outcome).toBe('live');
+    // nodock is not on the app network, so it reaches the container through Caddy.
+    expect(healths[0]).toBe(`http://caddy:8099/probe/${pending.id}/healthz`);
+
+    // First load: the probe, and the admin API on the socket. The public route is
+    // untouched, so the old container keeps serving while we check.
+    expect(loads[0]).toContain(`handle_path /probe/${pending.id}/*`);
+    expect(loads[0]).toContain('reverse_proxy nodock-api-prod-' + pending.id.slice(0, 8) + ':3000');
+    expect(loads[0]).toContain('admin unix//run/caddy/admin.sock');
+    expect(loads[0]).not.toContain('lb_try_duration');
+
+    // Second load: the switch, old container as failover, probe gone.
+    expect(loads[1]).toContain('lb_try_duration 5s');
+    expect(loads[1]).toContain('nodock-api-prod-old00000:3000');
+    expect(loads[1]).not.toContain('handle_path /probe/');
+    expect(calls.stopped).toEqual(['nodock-api-prod-old00000']);
+  });
+
+  test('a container that never answers has its probe route removed again', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db, { liveContainer: 'nodock-api-prod-old00000' });
+    const { docker, calls } = fakeDocker();
+    const { admin, loads } = fakeAdmin();
+
+    const outcome = await runDeployment(
+      { config: viaProxy, db, docker, admin, health: async () => false },
+      pending.id,
+    );
+
+    expect(outcome).toBe('failed');
+    expect(calls.stopped).toEqual([]);
+    expect(calls.removed).toEqual([containerName('api', 'prod', pending.id)]);
+    expect(loads[0]).toContain('handle_path /probe/');
+    expect(loads.at(-1)).not.toContain('handle_path /probe/');
+  });
+
+  test('a rejected probe route fails the deploy before the old container is touched', async () => {
+    const { db } = testDb();
+    const { pending } = seed(db, { liveContainer: 'nodock-api-prod-old00000' });
+    const { docker, calls } = fakeDocker();
+    const { admin } = fakeAdmin(false);
+
+    const outcome = await runDeployment(
+      { config: viaProxy, db, docker, admin, health: async () => true },
+      pending.id,
+    );
+
+    expect(outcome).toBe('failed');
+    expect(calls.stopped).toEqual([]);
+
+    const row = db.select().from(deployments).where(eq(deployments.id, pending.id)).get();
+    expect(row?.status).toBe('failed');
+    expect(row?.error).toContain('health-check route');
+  });
+});

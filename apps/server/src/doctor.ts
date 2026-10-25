@@ -88,14 +88,42 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
         },
   );
 
+  if (config.caddy.adminSocket) {
+    add({
+      name: 'caddy admin',
+      status: 'ok',
+      detail: `unix socket ${config.caddy.adminSocket}`,
+    });
+  } else if (config.caddy.adminUrl) {
+    // The admin API has no auth and rebuilding the routing table is root-equivalent:
+    // anything sharing a docker network with Caddy can do it over TCP.
+    add({
+      name: 'caddy admin',
+      status: 'warn',
+      detail: `${config.caddy.adminUrl} — unauthenticated, reachable over TCP`,
+      hint: 'Set CADDY_ADMIN_SOCKET=/run/caddy/admin.sock and share the socket volume instead',
+    });
+  } else {
+    add({
+      name: 'caddy admin',
+      status: 'warn',
+      detail: 'no admin endpoint — routing is not managed',
+      hint: 'compose sets CADDY_ADMIN_SOCKET; on a bare host you do not need it',
+    });
+  }
+
   add(
-    config.caddy.adminUrl
-      ? { name: 'caddy admin', status: 'ok', detail: config.caddy.adminUrl }
+    config.caddy.probeUrl
+      ? {
+          name: 'health probe',
+          status: 'ok',
+          detail: `through the proxy at ${config.caddy.probeUrl}`,
+        }
       : {
-          name: 'caddy admin',
+          name: 'health probe',
           status: 'warn',
-          detail: 'CADDY_ADMIN_URL is unset — routing is not managed',
-          hint: 'Set CADDY_ADMIN_URL=http://caddy:2019 (compose does this)',
+          detail: 'probing containers directly — nodock must share the app network',
+          hint: 'Set CADDY_PROBE_URL=http://caddy:8099 so the control plane can stay off the app network',
         },
   );
 

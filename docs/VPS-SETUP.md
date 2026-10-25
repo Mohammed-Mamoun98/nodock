@@ -104,7 +104,10 @@ docker compose -f docker/compose.yml ps
 ```
 
 `compose.build.yml` builds the image locally instead of pulling `ghcr.io/...`.
-`compose.yml` already sets `CADDY_ADMIN_URL=http://caddy:2019` and mounts the docker socket.
+`compose.yml` mounts the docker socket and shares Caddy's admin socket over the
+`caddy_admin` volume (`CADDY_ADMIN_SOCKET=/run/caddy/admin.sock`), so the admin API has no
+TCP listener at all. nodock is on the `nodock_control` network only; app containers join
+`nodock` (edge) with Caddy, and health checks go through Caddy's private probe listener.
 
 ## 6. Verify before touching the browser
 

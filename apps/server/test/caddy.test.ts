@@ -144,6 +144,66 @@ describe('render', () => {
       }),
     ).toThrow();
   });
+
+  test('the admin API can live on a unix socket, leaving no TCP listener', () => {
+    const rendered = renderCaddyfile({
+      dashboardHost: 'panel.example.com',
+      adminSocket: '/run/caddy/admin.sock',
+      adminUrl: 'http://caddy:2019',
+      routes: [],
+    });
+
+    // The socket wins: there is nothing for a container on the network to reach.
+    expect(rendered).toContain('admin unix//run/caddy/admin.sock');
+    expect(rendered).not.toContain('0.0.0.0:2019');
+  });
+
+  test('refuses an admin socket path that is not ours', () => {
+    for (const adminSocket of [
+      'run/caddy/admin.sock',
+      '/run/../etc/shadow',
+      '/run/caddy.sock\n}',
+    ]) {
+      expect(() =>
+        renderCaddyfile({ dashboardHost: 'panel.example.com', adminSocket, routes: [] }),
+      ).toThrow(/unsafe admin socket/);
+    }
+  });
+
+  test('a health-check probe is rendered on the private listener only', () => {
+    const rendered = renderCaddyfile({
+      dashboardHost: 'panel.example.com',
+      adminSocket: '/run/caddy/admin.sock',
+      routes: [{ host: 'api.apps.example.com', upstream: 'nodock-api-old:8080' }],
+      probes: [{ id: 'a8774167-0000-4000-8000-000000000000', upstream: 'nodock-api-new:8080' }],
+    });
+
+    expect(rendered).toContain(':8099 {');
+    expect(rendered).toContain('handle_path /probe/a8774167-0000-4000-8000-000000000000/*');
+    expect(rendered).toContain('reverse_proxy nodock-api-new:8080');
+    // The public route still points at the container that is actually live.
+    expect(rendered).toContain('reverse_proxy nodock-api-old:8080');
+    // The probe listener is a port listener, not a host.
+    expect(hostsIn(rendered)).toEqual(['panel.example.com', 'api.apps.example.com']);
+  });
+
+  test('refuses a probe id or upstream that could inject config', () => {
+    expect(() =>
+      renderCaddyfile({
+        dashboardHost: 'panel.example.com',
+        routes: [],
+        probes: [{ id: 'x/* { respond 200 }', upstream: 'a:1' }],
+      }),
+    ).toThrow(/unsafe probe id/);
+
+    expect(() =>
+      renderCaddyfile({
+        dashboardHost: 'panel.example.com',
+        routes: [],
+        probes: [{ id: 'ok', upstream: 'a:1 {\n\trespond 200' }],
+      }),
+    ).toThrow(/unsafe upstream/);
+  });
 });
 
 describe('routes', () => {

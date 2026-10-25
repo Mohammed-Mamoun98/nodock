@@ -2,7 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { createApp } from './app';
-import { createCaddyAdmin } from './caddy/admin';
+import { createCaddyAdminFromConfig } from './caddy/admin';
 import { reconcileWithRetry } from './caddy/service';
 import { markInterruptedOnBoot, startWatchdog, sweepStaleDeployments } from './deploy/watchdog';
 import { loadConfig } from './config';
@@ -99,8 +99,8 @@ process.on('SIGINT', stopWatchdog);
 
 // Routing is re-applied from DB state on every boot: Caddy's config may have been
 // autosaved from an older generation, and nodock may have missed changes while down.
-if (config.caddy.adminUrl) {
-  const admin = createCaddyAdmin(config.caddy.adminUrl);
+const admin = createCaddyAdminFromConfig(config.caddy);
+if (admin) {
   reconcileWithRetry({ config, db, admin }).then((result) => {
     console.log(
       result.ok
@@ -109,5 +109,7 @@ if (config.caddy.adminUrl) {
     );
   });
 } else {
-  console.log('[nodock] caddy reconcile disabled (CADDY_ADMIN_URL unset)');
+  console.log(
+    '[nodock] caddy reconcile disabled (set CADDY_ADMIN_SOCKET, or CADDY_ADMIN_URL for TCP)',
+  );
 }

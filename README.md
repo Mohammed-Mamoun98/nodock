@@ -96,9 +96,19 @@ the session works on both ports, but `:5173` must be in `ALLOWED_ORIGINS` for mu
 
 ## Security note
 
-nodock mounts `/var/run/docker.sock`, which is root-equivalent on the host, and Caddy's admin
-API is unauthenticated. Keep the panel OAuth-gated + allowlisted, never publish port 3000,
-and split the Docker networks so app containers cannot reach the admin API.
+nodock mounts `/var/run/docker.sock`, which is root-equivalent on the host. Two things keep
+that away from the apps you deploy:
+
+- **Two docker networks.** `edge` (`nodock`) holds Caddy and the app containers; `control`
+  (`nodock_control`) holds Caddy and nodock. nodock is not on `edge`, so a compromised app
+  cannot reach the panel API. Health checks reach new containers through Caddy's private
+  probe listener (`:8099`, unpublished) instead.
+- **No TCP admin API.** Caddy's admin listens on a unix socket (`caddy_admin` volume) that
+  only nodock mounts. There is no port to reach, even from a container on the wrong network.
+
+Still: keep the panel OAuth-gated + allowlisted and never publish port 3000. If you set
+`CADDY_ADMIN_URL` (TCP) for compatibility, remember that anything sharing a network with
+Caddy can then rewrite routing — `/api/doctor` warns about it.
 
 ## License
 

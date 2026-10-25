@@ -1,6 +1,14 @@
 # Self-contained install: compose.yml, Caddyfile and .env live side by side in
 # /opt/nodock. Nothing here references the source tree, because a user installing
 # nodock does not have one.
+#
+# Two docker networks, and the split is the point:
+#   edge     (nodock)          caddy + app containers
+#   control  (nodock_control)  caddy + nodock only
+#
+# nodock is not on `edge`, so a deployed app cannot reach the panel API or the
+# proxy's admin API. Caddy's admin is a unix socket shared through `caddy_admin`,
+# so there is no TCP admin listener to reach even if the networks were wrong.
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -10,7 +18,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks: [nodock]
+      - caddy_admin:/run/caddy
+    networks: [edge, control]
     restart: unless-stopped
 
   nodock:
@@ -19,20 +28,25 @@ services:
     environment:
       DATA_DIR: /data
       DOCKER_CONFIG: /data/docker
-      CADDY_ADMIN_URL: http://caddy:2019
+      CADDY_ADMIN_SOCKET: /run/caddy/admin.sock
+      CADDY_PROBE_URL: http://caddy:8099
     volumes:
       - nodock_data:/data
+      - caddy_admin:/run/caddy
       - /var/run/docker.sock:/var/run/docker.sock
-    networks: [nodock]
+    networks: [control]
     depends_on: [caddy]
     restart: unless-stopped
     mem_limit: 300m
 
 networks:
-  nodock:
+  edge:
     name: nodock
+  control:
+    name: nodock_control
 
 volumes:
   caddy_data: {}
   caddy_config: {}
+  caddy_admin: {}
   nodock_data: {}

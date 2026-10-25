@@ -96,12 +96,22 @@ export function buildRoutes(db: Db, pending?: { host: string; upstream: string }
   return routes;
 }
 
-export function renderCurrentConfig(deps: { config: Config; db: Db }): string {
+export function renderCurrentConfig(deps: {
+  config: Config;
+  db: Db;
+  /** Present only while a deployment is being health-checked. */
+  probe?: { deploymentId: string; upstream: string };
+}): string {
   return renderCaddyfile({
     dashboardHost: new URL(deps.config.url).host,
     dashboardUpstream: 'nodock:3000',
     askUrl: deps.config.caddy.askUrl,
+    adminSocket: deps.config.caddy.adminSocket,
+    adminUrl: deps.config.caddy.adminUrl,
     routes: buildRoutes(deps.db),
+    ...(deps.probe
+      ? { probes: [{ id: deps.probe.deploymentId, upstream: deps.probe.upstream }] }
+      : {}),
   });
 }
 
