@@ -1,0 +1,139 @@
+name: deploy
+
+# main is what the panel runs.
+#
+# The image is built here and pushed to GHCR, because a 1 vCPU / 1 GB box should not
+# run `vite build`; the VPS only pulls. Then `scripts/self-update.sh` switches the
+# running container over, health-checks it, and rolls back if it does not answer.
+#
+# Configure once (docs/DEPLOY.md → "Auto-deploy the panel"):
+#   secrets.VPS_HOST        ssh host of the box
+#   secrets.VPS_SSH_KEY     private key whose public half is in the box's authorized_keys
+#   secrets.VPS_USER        optional, defaults to root
+#   secrets.VPS_SSH_PORT    optional, defaults to 22
+#   vars.NODOCK_DIR         optional, defaults to /opt/nodock-src (the checkout on the box)
+#   vars.PANEL_URL          optional, e.g. https://panel.example.com — external health check
+#
+# Without VPS_HOST and VPS_SSH_KEY the deploy job skips itself with a notice, so a
+# fork or a fresh clone does not fail red on every merge.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Same job the PR ran; main gets no shortcuts.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: ci
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive the tag
+        id: meta
+        run: echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          # The VPS is amd64. Multi-arch belongs in release.yml, on a tag.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ github.repository }}:main
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # A GitHub environment, so required reviewers can be added here later without
+    # touching this file.
+    environment: production
+    steps:
+      - name: Are the deploy credentials configured?
+        id: gate
+        env:
+          HOST: ${{ secrets.VPS_HOST }}
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -n "$HOST" ] && [ -n "$KEY" ]; then
+            echo 'ready=yes' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=no' >> "$GITHUB_OUTPUT"
+            echo '::notice::VPS_HOST / VPS_SSH_KEY are not set — skipping the deploy. See docs/DEPLOY.md.'
+          fi
+
+      - name: Upgrade the panel
+        if: steps.gate.outputs.ready == 'yes'
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER: ${{ secrets.VPS_USER || 'root' }}
+          PORT: ${{ secrets.VPS_SSH_PORT || '22' }}
+          DIR: ${{ vars.NODOCK_DIR || '/opt/nodock-src' }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          # Never clobber uncommitted work on the box: this deploy owns that checkout.
+          ssh -i ~/.ssh/deploy -p "$PORT" "$USER@$HOST" "
+            set -euo pipefail
+            cd '$DIR'
+            if [ -n \"\$(git status --porcelain)\" ]; then
+              echo 'refusing to deploy: the checkout on this box has local changes' >&2
+              exit 1
+            fi
+            git fetch --prune origin
+            git reset --hard '${{ github.sha }}'
+            ./scripts/self-update.sh '$TAG'
+          "
+
+      - name: Does the panel answer?
+        if: steps.gate.outputs.ready == 'yes'
+        env:
+          PANEL_URL: ${{ vars.PANEL_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PANEL_URL:-}" ]; then
+            echo '::notice::vars.PANEL_URL is unset — skipping the external check'
+            exit 0
+          fi
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 5 "$PANEL_URL/healthz"; then
+              echo
+              exit 0
+            fi
+            echo "attempt $attempt: panel not answering yet"
+            sleep 3
+          done
+          echo "::error::$PANEL_URL did not answer after the upgrade. Roll back with: ./scripts/self-update.sh --rollback"
+          exit 1

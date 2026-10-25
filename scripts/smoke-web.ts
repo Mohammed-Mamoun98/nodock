@@ -136,7 +136,10 @@ const checks: [string, boolean][] = anonymous
       ['service card rendered', html.includes('milo-api')],
       ['real host rendered', html.includes('milo-api.apps.localhost')],
       ['deployment state rendered', html.includes('live')],
-      ['filters rendered', html.includes('Building')],
+      // The dashboard renders live data now, not the canvas mock: the filter row is
+      // gone, so assert the environment switcher and the ingress node instead.
+      ['environment switcher rendered', html.includes('Production')],
+      ['ingress node rendered', html.includes('caddy')],
       ['state vocabulary rendered', html.includes('live')],
       ['sign out affordance rendered', html.includes('sign out')],
     ];
@@ -155,3 +158,5 @@ if (failed > 0) {
   process.exit(1);
 }
 console.log('smoke ok');
+// happy-dom keeps timers alive; without this the script prints and never exits.
+process.exit(0);

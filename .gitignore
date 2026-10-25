@@ -18,3 +18,6 @@ apps/server/drizzle/meta/_journal.json.bak
 !.superdesign/resume.json
 !.superdesign/init/
 !.superdesign/init/**
+
+# Recorded image refs for scripts/self-update.sh (per-host state, never committed).
+.deploy/
