@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { Context, Hono } from 'hono';
 import { decrypt, deriveKey, encrypt } from '../auth/crypto';
 import { GitHubHttpError, type GitHubClient } from '../auth/github';
@@ -32,10 +32,16 @@ export interface CiDeps {
   admin?: CaddyAdmin;
   /** Deploy log sink; the pipeline writes pull/start/health output here. */
   logs?: DeployLogs;
+  /** Injectable in tests: resolves once a container answers (or gives up). */
+  health?: (url: string) => Promise<boolean>;
   now?: () => number;
 }
 
 const sha256 = (value: string) => createHash('sha256').update(value, 'utf8').digest('hex');
+
+/** A deployment can be rolled back to only if its image actually ran. */
+const ROLLBACKABLE = new Set(['live', 'superseded']);
+const IN_FLIGHT = ['queued', 'pulling', 'starting', 'healthchecking', 'switching'] as const;
 
 const enableBody = z.object({ overwrite: z.boolean().default(false) });
 
@@ -265,6 +271,115 @@ export function registerCiRoutes(app: Hono, deps: CiDeps): void {
 
     return c.json({ deployment: result.deployment }, 202);
   });
+
+  // Rollback re-runs a past image. Nothing is rebuilt and GitHub is not involved:
+  // the image is already in GHCR, and it runs with today's variables (code
+  // rollback, not config rollback). The digest makes the "past image" exact.
+  app.post('/api/services/:id/envs/:envId/deployments/:deploymentId/rollback', async (c) => {
+    const { docker } = deps;
+    if (!docker) {
+      const { status, body } = apiError('docker_unavailable', 'Docker is not available', 503);
+      return c.json(body, status);
+    }
+
+    const serviceEnv = findServiceEnv(db, c.req.param('id'), c.req.param('envId'));
+    if (!serviceEnv) {
+      const { status, body } = apiError('not_found', 'Service environment not found', 404);
+      return c.json(body, status);
+    }
+
+    const target = db
+      .select()
+      .from(deployments)
+      .where(eq(deployments.id, c.req.param('deploymentId')))
+      .get();
+    if (!target || target.serviceEnvId !== serviceEnv.id) {
+      const { status, body } = apiError(
+        'not_found',
+        'Deployment not found for this environment',
+        404,
+      );
+      return c.json(body, status);
+    }
+
+    // The newest live row is the one serving; older live rows are stragglers from
+    // a version that did not retire them, and rolling back to one is legitimate.
+    const current = db
+      .select()
+      .from(deployments)
+      .where(and(eq(deployments.serviceEnvId, serviceEnv.id), eq(deployments.status, 'live')))
+      .orderBy(desc(deployments.createdAt))
+      .get();
+    if (target.id === current?.id) {
+      const { status, body } = apiError('already_live', 'That deployment is already serving', 409);
+      return c.json(body, status);
+    }
+
+    if (!ROLLBACKABLE.has(target.status)) {
+      const { status, body } = apiError(
+        'not_rollbackable',
+        'Only a deployment that once ran can be rolled back to',
+        409,
+      );
+      return c.json(body, status);
+    }
+
+    const busy = db
+      .select({ id: deployments.id })
+      .from(deployments)
+      .where(
+        and(
+          eq(deployments.serviceEnvId, serviceEnv.id),
+          inArray(deployments.status, [...IN_FLIGHT]),
+        ),
+      )
+      .get();
+    if (busy) {
+      const { status, body } = apiError(
+        'deployment_in_progress',
+        'Wait for the deployment in progress to finish',
+        409,
+      );
+      return c.json(body, status);
+    }
+
+    const deployment = db
+      .insert(deployments)
+      .values({
+        serviceEnvId: serviceEnv.id,
+        trigger: 'rollback',
+        status: 'queued',
+        commitSha: target.commitSha,
+        commitMessage: target.commitMessage,
+        imageRef: target.imageRef,
+        imageDigest: target.imageDigest,
+        rollbackOf: target.id,
+      })
+      .returning()
+      .get();
+
+    // Not awaited: a pull can take a minute, and the panel polls the row.
+    void runDeployment(
+      {
+        config,
+        db,
+        docker,
+        admin: deps.admin ?? null,
+        logs: deps.logs,
+        health: deps.health,
+        now,
+      },
+      deployment.id,
+    )
+      .catch((error: unknown) => {
+        console.error('[nodock] rollback pipeline failed', error);
+      })
+      .finally(() => {
+        deps.logs?.prune();
+      });
+
+    return c.json({ deployment }, 202);
+  });
 }
 
 interface StartResult {
@@ -489,7 +604,14 @@ export function registerCiCallbacks(app: Hono, deps: CiDeps): void {
     // pull must not turn into a failed callback.
     if (!failed && deps.docker) {
       void runDeployment(
-        { config, db, docker: deps.docker, admin: deps.admin ?? null, logs: deps.logs },
+        {
+          config,
+          db,
+          docker: deps.docker,
+          admin: deps.admin ?? null,
+          logs: deps.logs,
+          health: deps.health,
+        },
         auth.payload.buildId,
       )
         .catch((error: unknown) => {

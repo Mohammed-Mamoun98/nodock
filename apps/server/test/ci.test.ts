@@ -16,6 +16,8 @@ import {
 } from '../src/db/schema';
 import { testDb } from './helpers';
 import type { GitHubClient } from '../src/auth/github';
+import type { CaddyAdmin } from '../src/caddy/admin';
+import type { DockerAdapter } from '../src/docker/adapter';
 
 void _sealSecret;
 
@@ -26,6 +28,7 @@ const config = loadConfig({
   ADMIN_GITHUB_LOGIN: 'mohammed',
   GITHUB_CLIENT_ID: 'client-id',
   GITHUB_CLIENT_SECRET: 'client-secret',
+  DATA_DIR: '/tmp/nodock-ci-test',
 });
 
 interface FakeCalls {
@@ -71,9 +74,23 @@ function fakeGitHub(
   return { client, calls };
 }
 
-async function signedIn(github: GitHubClient) {
+async function signedIn(
+  github: GitHubClient,
+  options: {
+    docker?: DockerAdapter;
+    admin?: CaddyAdmin | null;
+    health?: (url: string) => Promise<boolean>;
+  } = {},
+) {
   const { db } = testDb();
-  const app = createApp({ config, db, github });
+  const app = createApp({
+    config,
+    db,
+    github,
+    docker: options.docker,
+    admin: options.admin,
+    health: options.health,
+  });
 
   const start = await app.request('/auth/github');
   const state = decodeURIComponent(
@@ -350,6 +367,41 @@ describe('deploy dispatch', () => {
   });
 });
 
+const DIGEST = `sha256:${'c'.repeat(64)}`;
+
+function fakeRollbackDocker() {
+  const calls = { pulled: [] as string[], run: [] as string[] };
+  const docker: DockerAdapter = {
+    async pull(image) {
+      calls.pulled.push(image);
+      return { ok: true };
+    },
+    async run(spec) {
+      calls.run.push(spec.image);
+      return { id: 'container-1' };
+    },
+    async inspect() {
+      return { running: true, exitCode: 0, status: 'running' };
+    },
+    async stop() {},
+    async remove() {},
+  };
+  return { docker, calls };
+}
+
+/** The pipeline is deliberately not awaited by the route; wait for its first row. */
+async function until<T>(read: () => T | undefined, what: string, timeoutMs = 2000): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = read();
+    if (value !== undefined) return value;
+    // Sequential by design: poll, wait, poll again.
+    // eslint-disable-next-line no-await-in-loop
+    await Bun.sleep(10);
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
 async function enabledRepo() {
   const { client, calls } = fakeGitHub({ file: null });
   const ctx = await signedIn(client);
@@ -495,5 +547,193 @@ describe('push webhook', () => {
     );
 
     expect(response.status).toBe(401);
+  });
+});
+
+describe('rollback', () => {
+  test('runs a past image by digest with today’s service env', async () => {
+    const { client, calls: githubCalls } = fakeGitHub();
+    const { docker, calls } = fakeRollbackDocker();
+    const ctx = await signedIn(client, { docker, admin: null, health: async () => true });
+    const { service, serviceEnv } = await seedService(ctx.db);
+
+    const source = ctx.db
+      .insert(deployments)
+      .values({
+        serviceEnvId: serviceEnv.id,
+        trigger: 'push',
+        status: 'superseded',
+        commitSha: '0123456789abcdef',
+        commitMessage: 'the good one',
+        imageRef: 'ghcr.io/mohammed/milo:api-0123456789ab',
+        imageDigest: DIGEST,
+      })
+      .returning()
+      .get();
+
+    const response = await ctx.call(
+      `/api/services/${service.id}/envs/${serviceEnv.environmentId}/deployments/${source.id}/rollback`,
+      { method: 'POST', body: '{}' },
+    );
+
+    expect(response.status).toBe(202);
+    const created = ctx.db
+      .select()
+      .from(deployments)
+      .where(eq(deployments.trigger, 'rollback'))
+      .get();
+    expect(created?.rollbackOf).toBe(source.id);
+    expect(created?.commitSha).toBe(source.commitSha);
+    expect(created?.commitMessage).toBe(source.commitMessage);
+    expect(created?.imageRef).toBe(source.imageRef);
+    expect(created?.imageDigest).toBe(DIGEST);
+
+    // No CI is involved: the route kicks the normal pull/run/health/switch path.
+    const finished = await until(() => {
+      const row = ctx.db
+        .select()
+        .from(deployments)
+        .where(eq(deployments.id, created?.id ?? ''))
+        .get();
+      return row?.status === 'live' ? row : undefined;
+    }, 'the rollback to go live');
+    expect(finished.status).toBe('live');
+    expect(calls.pulled).toEqual([`ghcr.io/mohammed/milo@${DIGEST}`]);
+    expect(calls.run).toEqual([`ghcr.io/mohammed/milo@${DIGEST}`]);
+    // No rebuild: rollback never asks GitHub for anything.
+    expect(githubCalls.dispatches).toHaveLength(0);
+  });
+
+  test('refuses a deployment that never ran', async () => {
+    const { client } = fakeGitHub();
+    const { docker } = fakeRollbackDocker();
+    const ctx = await signedIn(client, { docker, admin: null });
+    const { service, serviceEnv } = await seedService(ctx.db);
+
+    const failed = ctx.db
+      .insert(deployments)
+      .values({
+        serviceEnvId: serviceEnv.id,
+        trigger: 'push',
+        status: 'failed',
+        imageRef: 'ghcr.io/mohammed/milo:api-broken',
+      })
+      .returning()
+      .get();
+
+    const response = await ctx.call(
+      `/api/services/${service.id}/envs/${serviceEnv.environmentId}/deployments/${failed.id}/rollback`,
+      { method: 'POST', body: '{}' },
+    );
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('not_rollbackable');
+    expect(
+      ctx.db.select().from(deployments).where(eq(deployments.trigger, 'rollback')).get(),
+    ).toBeUndefined();
+  });
+
+  test('refuses the deployment that is already serving', async () => {
+    const { client } = fakeGitHub();
+    const { docker } = fakeRollbackDocker();
+    const ctx = await signedIn(client, { docker, admin: null });
+    const { service, serviceEnv } = await seedService(ctx.db);
+
+    const live = ctx.db
+      .insert(deployments)
+      .values({
+        serviceEnvId: serviceEnv.id,
+        trigger: 'push',
+        status: 'live',
+        imageRef: 'ghcr.io/mohammed/milo:api-current',
+      })
+      .returning()
+      .get();
+
+    const response = await ctx.call(
+      `/api/services/${service.id}/envs/${serviceEnv.environmentId}/deployments/${live.id}/rollback`,
+      { method: 'POST', body: '{}' },
+    );
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('already_live');
+  });
+
+  test('does not touch a deployment from another environment', async () => {
+    const { client } = fakeGitHub();
+    const { docker } = fakeRollbackDocker();
+    const ctx = await signedIn(client, { docker, admin: null });
+    const { service, serviceEnv, env } = await seedService(ctx.db);
+
+    const staging = ctx.db
+      .insert(environments)
+      .values({ projectId: env.projectId, name: 'Staging', slug: 'staging' })
+      .returning()
+      .get();
+    const stagingEnv = ctx.db
+      .insert(serviceEnvs)
+      .values({
+        serviceId: service.id,
+        environmentId: staging.id,
+        branch: 'main',
+        generatedHost: 'api-staging.apps.example.com',
+      })
+      .returning()
+      .get();
+    const foreign = ctx.db
+      .insert(deployments)
+      .values({
+        serviceEnvId: stagingEnv.id,
+        trigger: 'push',
+        status: 'superseded',
+        imageRef: 'ghcr.io/mohammed/milo:api-staging',
+      })
+      .returning()
+      .get();
+
+    const response = await ctx.call(
+      `/api/services/${service.id}/envs/${serviceEnv.environmentId}/deployments/${foreign.id}/rollback`,
+      { method: 'POST', body: '{}' },
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  test('refuses while another deployment for the environment is moving', async () => {
+    const { client } = fakeGitHub();
+    const { docker } = fakeRollbackDocker();
+    const ctx = await signedIn(client, { docker, admin: null });
+    const { service, serviceEnv } = await seedService(ctx.db);
+
+    const source = ctx.db
+      .insert(deployments)
+      .values({
+        serviceEnvId: serviceEnv.id,
+        trigger: 'push',
+        status: 'superseded',
+        imageRef: 'ghcr.io/mohammed/milo:api-old',
+      })
+      .returning()
+      .get();
+    ctx.db
+      .insert(deployments)
+      .values({
+        serviceEnvId: serviceEnv.id,
+        trigger: 'push',
+        status: 'pulling',
+        imageRef: 'ghcr.io/mohammed/milo:api-new',
+      })
+      .run();
+
+    const response = await ctx.call(
+      `/api/services/${service.id}/envs/${serviceEnv.environmentId}/deployments/${source.id}/rollback`,
+      { method: 'POST', body: '{}' },
+    );
+
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('deployment_in_progress');
   });
 });

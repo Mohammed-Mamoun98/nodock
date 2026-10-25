@@ -21,6 +21,9 @@ reports what the container is actually doing.
   through Caddy's private probe listener, then switches the route.
 - **Two logs, two places.** The deploy log (pull, start, health, switch) is kept on disk and
   streamed in the panel. The app's own stdout/stderr streams from `docker logs -f`.
+- **Rollback.** Pick a previous successful deployment and nodock runs its exact image digest
+  again — same pull → run → health → switch path, no rebuild, no GitHub. It uses today's
+  variables, so this is code rollback, not config rollback.
 - **Variables per environment**, encrypted at rest with AES-256-GCM under `NODOCK_SECRET`.
 - **An HTTPS URL per environment** under `BASE_DOMAIN`, with automatic certificates. A custom
   domain column is modelled and served by Caddy; the panel has no editor for it yet.
@@ -46,10 +49,10 @@ and written next to it. So a crash loop can no longer look green:
 The API ships the same sentence the UI shows (`container killed by the OOM killer, exit 137`,
 `container is gone — nothing is running for this deployment`), so every view tells one story.
 
-**Not in the panel yet:** rollback (the button is a stub), start/stop/restart, persistent
-volumes, multi-replica services, CPU/RAM graphs, PR previews, teams, multi-server. Also not
-covered: an app that is _running but broken_ (500s, wrong port) still looks healthy — that
-needs each service's health path polled continuously.
+**Not in the panel yet:** start/stop/restart, persistent volumes, multi-replica services,
+CPU/RAM graphs, PR previews, teams, multi-server. Also not covered: an app that is _running but
+broken_ (500s, wrong port) still looks healthy — that needs each service's health path polled
+continuously.
 
 ## Layout
 

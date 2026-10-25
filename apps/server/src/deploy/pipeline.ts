@@ -16,6 +16,16 @@ import { explainPullFailure } from './pull-error';
 const REGISTRY = 'ghcr.io';
 /** One login per process: the daemon keeps the credential in /data/docker. */
 const loggedIn = new Set<string>();
+const SHA256 = /^sha256:[0-9a-f]{64}$/i;
+
+/**
+ * Pull by digest when CI reported one: a tag can be repointed, a digest cannot.
+ * Rollback depends on this — the tag it was built from may since have moved.
+ */
+export function imageForPull(ref: string, digest: string | null | undefined): string {
+  if (!digest || !SHA256.test(digest)) return ref;
+  return `${ref.replace(/:[^/:]+$/, '')}@${digest.toLowerCase()}`;
+}
 
 export type DeployOutcome = 'live' | 'failed' | 'skipped';
 
@@ -87,6 +97,7 @@ export async function runDeployment(
   // only moment the image metadata is available and trustworthy.
   let port = service.containerPort ?? 0;
   const name = containerName(service.slug, 'prod', deployment.id);
+  const image = imageForPull(deployment.imageRef, deployment.imageDigest);
 
   const previous = db
     .select()
@@ -112,10 +123,10 @@ export async function runDeployment(
       startedAt: new Date(now()),
       logPath: deps.logs?.pathFor(deploymentId) ?? null,
     });
-    log(deploymentId, `pulling ${deployment.imageRef}`);
+    log(deploymentId, `pulling ${image}`);
 
     await ensureRegistryLogin(deps);
-    const pulled = await docker.pull(deployment.imageRef, (line) => log(deploymentId, line));
+    const pulled = await docker.pull(image, (line) => log(deploymentId, line));
     if (!pulled.ok) {
       const explanation = explainPullFailure(pulled.error ?? 'pull failed', config);
       log(deploymentId, explanation);
@@ -124,7 +135,7 @@ export async function runDeployment(
     }
 
     if (!port) {
-      const exposed = docker.exposedPorts ? await docker.exposedPorts(deployment.imageRef) : [];
+      const exposed = docker.exposedPorts ? await docker.exposedPorts(image) : [];
       const chosen = exposed.length === 1 ? exposed[0] : 0;
       if (chosen) {
         port = chosen;
@@ -147,7 +158,7 @@ export async function runDeployment(
 
     await docker.run({
       name,
-      image: deployment.imageRef,
+      image,
       envFile,
       network: config.dockerNetwork,
       memoryMb: service.memoryLimitMb ?? 512,

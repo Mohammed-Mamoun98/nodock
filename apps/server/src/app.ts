@@ -33,6 +33,8 @@ export interface AppDeps {
   bootedAt?: number;
   /** Injected in tests: log tail and keepalive intervals, in milliseconds. */
   logTimings?: { tailMs?: number; pingMs?: number };
+  /** Injected in tests: replaces the 60s HTTP health check during a deploy. */
+  health?: (url: string) => Promise<boolean>;
 }
 
 export function createApp(deps: AppDeps) {
@@ -84,6 +86,7 @@ export function createApp(deps: AppDeps) {
     docker,
     admin: admin ?? undefined,
     logs,
+    health: deps.health,
     now: deps.now,
   });
 
@@ -106,7 +109,16 @@ export function createApp(deps: AppDeps) {
     github: deps.github ?? createGitHubClient(),
     now: deps.now,
   });
-  registerCiRoutes(app, { config, db, github: deps.github ?? createGitHubClient(), now: deps.now });
+  registerCiRoutes(app, {
+    config,
+    db,
+    github: deps.github ?? createGitHubClient(),
+    docker,
+    admin: admin ?? undefined,
+    logs,
+    health: deps.health,
+    now: deps.now,
+  });
   registerProjectRoutes(app, {
     config,
     db,
