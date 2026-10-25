@@ -39,14 +39,26 @@ selected service. Selection is expressed by a lime top border on the card, not b
 
 ## Deployment states (exact vocabulary)
 
-`queued` · `pulling` · `starting` · `healthchecking` · `switching` · `live` · `failed` · `cancelled`
+`queued` · `pulling` · `starting` · `healthchecking` · `switching` · `live` · `failed` · `cancelled` ·
+`superseded`
+
+A deployment status is the record of a **deploy**, not of the container: `live` means the pull,
+health check and route switch all worked. It can never turn false on its own — a process that
+dies ten minutes later does not un-deploy. What the container is doing *now* is a second,
+independent fact (`runtime_state`, refreshed from `docker inspect` every 15s), and the panel always
+shows the worse of the two.
 
 UI label mapping:
 - `queued` / `pulling` / `starting` / `healthchecking` / `switching` → **building** or the literal
   step name when the row has space; amber dot, `pulse-dot` animation.
 - `live` → **live**; lime dot, no animation.
 - `failed` → **failed**; red dot, plus a one-line cause and remedy.
-- `cancelled` → **cancelled** (`superseded` when a newer build displaced it); steel dot.
+- `cancelled` → **cancelled** — it never ran; steel dot.
+- `superseded` → **superseded** — it served, then a newer deployment took the route; steel dot.
+- `live` + `runtime_state.restarting` → **crash loop**; amber dot, plus restarts and exit code.
+- `live` + `runtime_state.exited | dead | missing | unknown` → **crashed**; red dot, plus the
+  daemon's reason (exit code, OOM, "container is gone"). `unknown` is *not* an outage: it means
+  the daemon could not be asked.
 - Manually stopped container → **stopped**; hollow steel ring, never a filled dot.
 
 Color is never the only signal: every state also has its word and (for in-progress) motion.

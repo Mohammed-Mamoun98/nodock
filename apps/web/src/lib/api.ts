@@ -94,7 +94,21 @@ export type DeploymentStatus =
   | 'switching'
   | 'live'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  /** Was live, then a newer deployment took the route. */
+  | 'superseded';
+
+/** `docker inspect` on the deployment's container. Null before the first check. */
+export type RuntimeState =
+  | 'running'
+  | 'restarting'
+  | 'created'
+  | 'paused'
+  | 'removing'
+  | 'exited'
+  | 'dead'
+  | 'missing'
+  | 'unknown';
 
 export interface LatestDeployment {
   id: string;
@@ -104,6 +118,9 @@ export interface LatestDeployment {
   ciRunUrl: string | null;
   error: string | null;
   createdAt: string | null;
+  runtimeState: RuntimeState | null;
+  /** The sentence to show instead of a green "live"; null when nothing is wrong. */
+  runtimeWarning: string | null;
 }
 
 export interface ServiceEnvSummary {
@@ -231,6 +248,12 @@ export interface DeploymentRow {
   createdAt: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  runtimeState: RuntimeState | null;
+  runtimeExitCode: number | null;
+  runtimeRestarts: number | null;
+  runtimeOom: boolean | null;
+  runtimeCheckedAt: string | null;
+  runtimeWarning: string | null;
 }
 
 export function listDeployments(serviceId: string): Promise<{ deployments: DeploymentRow[] }> {

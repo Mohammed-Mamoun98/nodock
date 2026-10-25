@@ -312,6 +312,19 @@ describe('deploy pipeline', () => {
     const row = db.select().from(deployments).where(eq(deployments.id, pending.id)).get();
     expect(row?.status).toBe('live');
     expect(row?.containerName).toBe(containerName('api', 'prod', pending.id));
+    // The container was just health-checked, so its runtime snapshot starts honest.
+    expect(row?.runtimeState).toBe('running');
+    expect(row?.runtimeRestarts).toBe(0);
+
+    // And the deployment it replaced is history: leaving it `live` would list a
+    // green row for a container that no longer exists.
+    const old = db
+      .select()
+      .from(deployments)
+      .where(eq(deployments.containerName, 'nodock-api-prod-old00000'))
+      .get();
+    expect(old?.status).toBe('superseded');
+    expect(old?.runtimeState).toBeNull();
   });
 
   test('a failed pull never touches the old container', async () => {
@@ -331,6 +344,15 @@ describe('deploy pipeline', () => {
     expect(
       db.select().from(deployments).where(eq(deployments.id, pending.id)).get()?.error,
     ).toContain('manifest unknown');
+
+    // The old deployment keeps the route, so it stays live: superseding it here
+    // would point the panel at a container that never took over.
+    const old = db
+      .select()
+      .from(deployments)
+      .where(eq(deployments.containerName, 'nodock-api-prod-old00000'))
+      .get();
+    expect(old?.status).toBe('live');
   });
 
   test("an unset port is taken from the image's EXPOSE", async () => {

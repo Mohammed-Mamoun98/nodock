@@ -18,8 +18,30 @@ export const DEPLOYMENT_STATUSES = [
   'live',
   'failed',
   'cancelled',
+  /** Was live, then a newer deployment took the route. Kept apart from `cancelled`,
+   * which means "never ran": a superseded deployment served real traffic once. */
+  'superseded',
 ] as const;
 export type DeploymentStatus = (typeof DEPLOYMENT_STATUSES)[number];
+
+/**
+ * `docker inspect .State.Status`, plus `missing` for a container that is not there
+ * and `unknown` for a daemon we could not ask. The deployment status says what the
+ * *deploy* did; this says what the *container* is doing now, which is the part that
+ * goes stale and makes a crash loop look healthy.
+ */
+export const RUNTIME_STATES = [
+  'running',
+  'restarting',
+  'created',
+  'paused',
+  'removing',
+  'exited',
+  'dead',
+  'missing',
+  'unknown',
+] as const;
+export type RuntimeState = (typeof RUNTIME_STATES)[number];
 
 export const DEPLOYMENT_TRIGGERS = ['manual', 'push', 'rollback'] as const;
 export type DeploymentTrigger = (typeof DEPLOYMENT_TRIGGERS)[number];
@@ -191,6 +213,13 @@ export const deployments = sqliteTable(
     rollbackOf: text('rollback_of'),
     error: text('error'),
     logPath: text('log_path'),
+    /** Last `docker inspect` of this deployment's container; see RUNTIME_STATES. */
+    runtimeState: text('runtime_state', { enum: RUNTIME_STATES }),
+    runtimeExitCode: integer('runtime_exit_code'),
+    runtimeRestarts: integer('runtime_restarts'),
+    /** Whether that inspect said the kernel killed it (1 GB boxes run out of memory). */
+    runtimeOom: integer('runtime_oom', { mode: 'boolean' }),
+    runtimeCheckedAt: integer('runtime_checked_at', { mode: 'timestamp_ms' }),
     createdAt: createdAt().notNull(),
     startedAt: integer('started_at', { mode: 'timestamp_ms' }),
     finishedAt: integer('finished_at', { mode: 'timestamp_ms' }),

@@ -12,6 +12,8 @@ import type { ServiceState } from '../lib/view';
 export const stateMeta: Record<ServiceState, { label: string; tone: Tone; inFlight: boolean }> = {
   live: { label: 'live', tone: 'lime', inFlight: false },
   building: { label: 'building on github', tone: 'amber', inFlight: true },
+  restarting: { label: 'crash loop', tone: 'amber', inFlight: false },
+  crashed: { label: 'crashed', tone: 'red', inFlight: false },
   failed: { label: 'failed', tone: 'red', inFlight: false },
   stopped: { label: 'stopped', tone: 'steel', inFlight: false },
   undeployed: { label: 'not deployed', tone: 'steel', inFlight: false },
@@ -26,6 +28,9 @@ export function primaryAction(state: ServiceState): {
       return { label: 'View build', kind: 'primary' };
     case 'failed':
       return { label: 'Redeploy', kind: 'secondary' };
+    case 'crashed':
+    case 'restarting':
+      return { label: 'Inspect', kind: 'secondary' };
     case 'stopped':
       return { label: 'Start', kind: 'secondary' };
     case 'undeployed':
@@ -43,7 +48,8 @@ export const deploymentStatusMeta: Record<
   | 'switching'
   | 'live'
   | 'failed'
-  | 'cancelled',
+  | 'cancelled'
+  | 'superseded',
   { label: string; tone: Tone }
 > = {
   queued: { label: 'queued', tone: 'amber' },
@@ -54,4 +60,5 @@ export const deploymentStatusMeta: Record<
   live: { label: 'live', tone: 'lime' },
   failed: { label: 'failed', tone: 'red' },
   cancelled: { label: 'cancelled', tone: 'steel' },
+  superseded: { label: 'superseded', tone: 'steel' },
 };

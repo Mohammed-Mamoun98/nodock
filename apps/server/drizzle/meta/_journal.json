@@ -22,6 +22,13 @@
       "when": 1792872748004,
       "tag": "0002_strong_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1792894531798,
+      "tag": "0003_messy_blade",
+      "breakpoints": true
     }
   ]
 }

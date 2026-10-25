@@ -38,6 +38,8 @@ g.requestAnimationFrame = (cb: (t: number) => void) => setTimeout(() => cb(Date.
 g.cancelAnimationFrame = (id: number) => clearTimeout(id);
 // The only calls the shell makes; answer them locally.
 const anonymous = process.env.SMOKE_ANONYMOUS === '1';
+/** Same dashboard, but the container behind the deployment died after it went live. */
+const crashed = process.env.SMOKE_CRASHED === '1';
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
@@ -89,6 +91,8 @@ g.fetch = async (input: string | URL | Request) => {
                 ciRunUrl: null,
                 error: null,
                 createdAt: new Date().toISOString(),
+                runtimeState: crashed ? 'exited' : 'running',
+                runtimeWarning: crashed ? 'container exited with code 1 (4 restarts)' : null,
               },
             },
           ],
@@ -129,20 +133,29 @@ const checks: [string, boolean][] = anonymous
       ['requested scopes disclosed', html.includes('repo · workflow')],
       ['no dashboard leaked to anonymous users', !html.includes('milo-api')],
     ]
-  : [
-      ['root is populated', html.length > 500],
-      ['product mark rendered', html.includes('nodock')],
-      ['project switcher rendered', html.includes('milo')],
-      ['service card rendered', html.includes('milo-api')],
-      ['real host rendered', html.includes('milo-api.apps.localhost')],
-      ['deployment state rendered', html.includes('live')],
-      // The dashboard renders live data now, not the canvas mock: the filter row is
-      // gone, so assert the environment switcher and the ingress node instead.
-      ['environment switcher rendered', html.includes('Production')],
-      ['ingress node rendered', html.includes('caddy')],
-      ['state vocabulary rendered', html.includes('live')],
-      ['sign out affordance rendered', html.includes('sign out')],
-    ];
+  : crashed
+    ? [
+        // The deploy succeeded, so the status column still says live. The card must
+        // not repeat that: the daemon says the container exited.
+        ['card rendered', html.includes('milo-api')],
+        ['crashed state rendered', html.includes('crashed')],
+        ['green live not claimed', !html.includes('>live<')],
+        ['runtime detail rendered', html.includes('container exited with code 1')],
+      ]
+    : [
+        ['root is populated', html.length > 500],
+        ['product mark rendered', html.includes('nodock')],
+        ['project switcher rendered', html.includes('milo')],
+        ['service card rendered', html.includes('milo-api')],
+        ['real host rendered', html.includes('milo-api.apps.localhost')],
+        ['deployment state rendered', html.includes('live')],
+        // The dashboard renders live data now, not the canvas mock: the filter row is
+        // gone, so assert the environment switcher and the ingress node instead.
+        ['environment switcher rendered', html.includes('Production')],
+        ['ingress node rendered', html.includes('caddy')],
+        ['state vocabulary rendered', html.includes('live')],
+        ['sign out affordance rendered', html.includes('sign out')],
+      ];
 
 let failed = 0;
 for (const [label, ok] of checks) {

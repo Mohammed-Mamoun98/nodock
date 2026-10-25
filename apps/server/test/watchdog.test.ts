@@ -125,7 +125,7 @@ describe('boot recovery', () => {
     const serviceEnv = seed(db);
     const stale = addDeployment(db, serviceEnv.id, 'queued', 45 * 60 * 1000);
 
-    const stop = startWatchdog(db, 5);
+    const stop = startWatchdog(db, { intervalMs: 5 });
     await new Promise((resolve) => setTimeout(resolve, 30));
     stop();
 

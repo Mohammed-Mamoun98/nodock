@@ -5,6 +5,7 @@ import { createApp } from './app';
 import { createCaddyAdminFromConfig } from './caddy/admin';
 import { createDeployLogs } from './deploy/deploy-log';
 import { reconcileWithRetry } from './caddy/service';
+import { createDockerCli } from './docker/adapter';
 import { markInterruptedOnBoot, startWatchdog, sweepStaleDeployments } from './deploy/watchdog';
 import { loadConfig } from './config';
 import { openDatabase } from './db/client';
@@ -100,7 +101,9 @@ if (interrupted > 0 || sweep.queuedFailed > 0 || sweep.inFlightFailed > 0) {
     `[nodock] recovery: ${interrupted} interrupted, ${sweep.queuedFailed} stale queued, ${sweep.inFlightFailed} stalled`,
   );
 }
-const stopWatchdog = startWatchdog(db);
+// One inspect per live container every 15s: the panel's "live" comes from the daemon,
+// not from the last successful deploy.
+const stopWatchdog = startWatchdog(db, { docker: createDockerCli() });
 process.on('SIGTERM', stopWatchdog);
 process.on('SIGINT', stopWatchdog);
 

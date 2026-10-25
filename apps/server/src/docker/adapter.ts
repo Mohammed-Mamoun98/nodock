@@ -19,6 +19,10 @@ export interface ContainerState {
   running: boolean;
   exitCode: number | null;
   status: string;
+  /** How many times the daemon has restarted it — a crash loop's telltale. */
+  restartCount?: number;
+  /** The kernel, not the app, ended it. */
+  oomKilled?: boolean;
 }
 
 export interface DockerAdapter {
@@ -204,21 +208,36 @@ export function createDockerCli(run: typeof Bun.spawn = Bun.spawn): DockerAdapte
           'docker',
           'inspect',
           '--format',
-          '{{.State.Running}} {{.State.ExitCode}} {{.State.Status}}',
+          // `RestartCount` lives on the container, not inside `.State` — putting it
+          // in the wrong place makes the template fail, and a failed inspect must
+          // never be read as "the container is gone".
+          '{{.State.Running}} {{.State.ExitCode}} {{.State.Status}} {{.RestartCount}} {{.State.OOMKilled}}',
           name,
         ],
         { stdout: 'pipe', stderr: 'pipe', stdin: 'ignore' },
       );
 
-      const out = await new Response(child.stdout).text();
+      const [out, err] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
       const code = await child.exited;
-      if (code !== 0) return null;
 
-      const [running, exitCode, status] = out.trim().split(' ');
+      if (code !== 0) {
+        // "There is no such container" and "the daemon is down" are opposite
+        // answers: the first means the app is gone, the second means we simply
+        // cannot see it. Only the first may be reported as fact.
+        if (/no such (container|object)/i.test(err)) return null;
+        throw new Error(err.trim().split('\n')[0] || `docker inspect exited with ${code}`);
+      }
+
+      const [running, exitCode, status, restarts, oom] = out.trim().split(' ');
       return {
         running: running === 'true',
         exitCode: exitCode === '<no value>' ? null : Number(exitCode),
         status: status ?? 'unknown',
+        restartCount: restarts === undefined || restarts === '<no value>' ? 0 : Number(restarts),
+        oomKilled: oom === 'true',
       };
     },
 

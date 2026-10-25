@@ -1,6 +1,8 @@
 import { and, eq, inArray, lt } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { deployments } from '../db/schema';
+import type { DockerAdapter } from '../docker/adapter';
+import { sweepRuntime } from './runtime';
 
 /** A CI callback normally lands within minutes; half an hour means it was lost. */
 const QUEUED_TIMEOUT_MS = 30 * 60 * 1000;
@@ -103,7 +105,21 @@ export function sweepStaleDeployments(db: Db, now: number = Date.now()): SweepRe
 }
 
 /** Boot + interval. Returns a stop function so tests and shutdown can clean up. */
-export function startWatchdog(db: Db, intervalMs = 60_000): () => void {
+export interface WatchdogOptions {
+  /** Absent in tests that only exercise the stale-row sweep. */
+  docker?: Pick<DockerAdapter, 'inspect'>;
+  intervalMs?: number;
+  /**
+   * How often the daemon is asked about the live containers. Fifteen seconds: fast
+   * enough that a crash loop shows up while the operator is still looking, slow
+   * enough that a 1 vCPU box does not spend its day spawning `docker inspect`.
+   */
+  runtimeMs?: number;
+}
+
+export function startWatchdog(db: Db, options: WatchdogOptions = {}): () => void {
+  const { docker, intervalMs = 60_000, runtimeMs = 15_000 } = options;
+
   const timer = setInterval(() => {
     const result = sweepStaleDeployments(db);
     if (result.queuedFailed > 0 || result.inFlightFailed > 0) {
@@ -113,5 +129,30 @@ export function startWatchdog(db: Db, intervalMs = 60_000): () => void {
     }
   }, intervalMs);
 
-  return () => clearInterval(timer);
+  // A sweep can outlive its interval on a slow daemon; overlapping ones would only
+  // stack identical spawns, so the second tick is dropped instead.
+  let sweeping = false;
+  const runtimeTimer = docker
+    ? setInterval(() => {
+        if (sweeping) return;
+        sweeping = true;
+        void sweepRuntime(db, docker)
+          .then((result) => {
+            for (const change of result.changed) {
+              console.log(
+                `[nodock] runtime: ${change.containerName} ${change.from ?? 'new'} → ${change.to}`,
+              );
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            sweeping = false;
+          });
+      }, runtimeMs)
+    : null;
+
+  return () => {
+    clearInterval(timer);
+    if (runtimeTimer) clearInterval(runtimeTimer);
+  };
 }
