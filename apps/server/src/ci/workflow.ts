@@ -27,6 +27,19 @@ export const WORKFLOW_VERSION = 2;
  */
 export const RAILPACK_FRONTEND = 'ghcr.io/railwayapp/railpack:railpack-frontend';
 
+/**
+ * Whether a file at WORKFLOW_PATH is the one nodock wrote.
+ *
+ * The marker matters for recovery: deleting a service removes nodock's webhook and
+ * CI token but leaves this file in the repo (it is the user's code). Re-creating the
+ * service then finds a workflow that already exists. Overwriting nodock's own file is
+ * a re-sync; overwriting anything else at that path would destroy work the user wrote.
+ */
+export function isNodockWorkflow(content: string): boolean {
+  const head = content.trimStart();
+  return head.startsWith('name: nodock') && content.includes('Managed by nodock');
+}
+
 export function renderWorkflow(nodockUrl: string): string {
   const base = nodockUrl.replace(/\/$/, '');
 

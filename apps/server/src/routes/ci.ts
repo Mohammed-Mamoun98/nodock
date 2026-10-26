@@ -10,6 +10,7 @@ import {
   assertDispatchPayload,
   CI_SECRET_NAME,
   imageRef,
+  isNodockWorkflow,
   renderWorkflow,
   WORKFLOW_PATH,
   WORKFLOW_VERSION,
@@ -113,7 +114,14 @@ export function registerCiRoutes(app: Hono, deps: CiDeps): void {
     const row = db.select().from(repoHooks).where(eq(repoHooks.repoFullName, repoFullName)).get();
 
     if (!row?.ciEnabledAt) {
-      return c.json({ status: 'not_enabled' as const, workflowPath: WORKFLOW_PATH });
+      // Deleting the last service of a repo drops its webhook and CI token but keeps
+      // the workflow file (it is the user's code). Re-creating the service then meets
+      // a repo that looks set up and is not, so say which half is missing.
+      return c.json({
+        status: 'not_enabled' as const,
+        workflowPath: WORKFLOW_PATH,
+        reason: 'no webhook or CI token on this repository: connect CI to re-add them',
+      });
     }
 
     if (requireOps(github)) {
@@ -194,7 +202,11 @@ export function registerCiRoutes(app: Hono, deps: CiDeps): void {
         info.defaultBranch,
       );
 
-      if (existing && existing.content !== workflow && !parsed.data.overwrite) {
+      // A file nodock wrote itself is a re-sync, not a conflict: that is what a repo
+      // has after its last service was deleted and added again.
+      const mayOverwrite = parsed.data.overwrite || isNodockWorkflow(existing?.content ?? '');
+
+      if (existing && existing.content !== workflow && !mayOverwrite) {
         return c.json(
           {
             error: {
@@ -440,7 +452,8 @@ async function startDeployment(
     return {
       error: {
         code: 'ci_not_enabled',
-        message: 'Enable CI for this repository before deploying',
+        message:
+          'This repository has no CI connection: connect it in the service settings (Settings → CI), then deploy again.',
         status: 409,
       },
     };
