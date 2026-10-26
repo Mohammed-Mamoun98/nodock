@@ -6,9 +6,12 @@ import {
   ApiError,
   deleteService,
   deployService,
+  enableCi,
+  getCiStatus,
   getService,
   listDeployments,
   rollbackDeployment,
+  type CiState,
   type DeploymentRow,
 } from '../lib/api';
 import { deploymentStatusMeta, isDeploymentInFlight, stateMeta } from '../lib/status';
@@ -17,6 +20,44 @@ import { useAsync } from '../lib/useAsync';
 import { deriveState, relativeAge } from '../lib/view';
 import { navigate } from '../lib/router';
 import { VariablesPanel } from './VariablesPanel';
+
+/**
+ * The CI connection, in the words of the one person who has to fix it. `not_enabled`
+ * is the state a repo lands in after its last service is deleted and added again: the
+ * workflow file stays, the webhook and token do not.
+ */
+function ciSummary(state: CiState | null): {
+  label: string;
+  tone: string;
+  action: { label: string; overwrite: boolean } | null;
+} {
+  switch (state?.status) {
+    case 'enabled':
+      return { label: 'connected', tone: 'text-lime', action: null };
+    case 'not_enabled':
+      return {
+        label: 'not connected',
+        tone: 'text-red',
+        action: { label: 'Connect CI', overwrite: false },
+      };
+    case 'out_of_date':
+      return {
+        label: 'workflow out of date',
+        tone: 'text-amber',
+        action: { label: 'Re-sync workflow', overwrite: true },
+      };
+    case 'modified':
+      return {
+        label: 'workflow edited in the repo',
+        tone: 'text-amber',
+        action: { label: 'Overwrite workflow', overwrite: true },
+      };
+    case 'unknown':
+      return { label: 'unknown', tone: 'text-text-dim', action: null };
+    default:
+      return { label: 'checking…', tone: 'text-text-dim', action: null };
+  }
+}
 
 const tabs = ['Deployments', 'Logs', 'Variables', 'Settings'] as const;
 type Tab = (typeof tabs)[number];
@@ -229,6 +270,29 @@ export function ServicePanel({
     recheckMs: 12_000,
     recheckWhen: (page) => page?.deployments.some((row) => row.status === 'live') ?? false,
   });
+
+  // Read from the async value, not from `record`: hooks run before the early returns.
+  const [owner = '', repo = ''] = (service.data?.service?.repoFullName ?? '').split('/');
+  const ci = useAsync<CiState | null>(
+    () => (owner && repo ? getCiStatus(owner, repo) : Promise.resolve(null)),
+    [owner, repo],
+  );
+  const [ciBusy, setCiBusy] = useState(false);
+  const [ciError, setCiError] = useState<string | null>(null);
+  const ciView = ciSummary(ci.data ?? null);
+
+  async function connectCi(overwrite: boolean): Promise<void> {
+    setCiBusy(true);
+    setCiError(null);
+    try {
+      await enableCi(owner, repo, overwrite);
+      ci.reload();
+    } catch (cause) {
+      setCiError(cause instanceof ApiError ? cause.message : String(cause));
+    } finally {
+      setCiBusy(false);
+    }
+  }
 
   const rows = useMemo(() => deployments.data?.deployments ?? [], [deployments.data]);
   const activeRow = rows.find((row) => row.status === 'live') ?? rows[0] ?? null;
@@ -502,9 +566,26 @@ export function ServicePanel({
                 {link?.branch ?? '—'}
               </span>
             </div>
-            <div className="flex items-center justify-between rounded-md border border-line bg-surface-2/40 px-3 py-2">
-              <span className="font-mono text-mono-xs text-text-dim">auto deploy on push</span>
-              <span className="font-mono text-mono-xs text-lime">enabled</span>
+            <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-2/40 px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-mono text-mono-xs text-text-dim">auto deploy on push</span>
+                <span className={`shrink-0 font-mono text-mono-xs ${ciView.tone}`}>
+                  {ciView.label}
+                </span>
+              </div>
+              {ci.data?.reason ? (
+                <p className="font-mono text-mono-xs text-text-dim">{ci.data.reason}</p>
+              ) : null}
+              {ciError ? <p className="font-mono text-mono-xs text-red">{ciError}</p> : null}
+              {ciView.action ? (
+                <Button
+                  className="self-start"
+                  disabled={ciBusy}
+                  onClick={() => void connectCi(ciView.action?.overwrite ?? false)}
+                >
+                  {ciBusy ? 'Working…' : ciView.action.label}
+                </Button>
+              ) : null}
             </div>
           </section>
 

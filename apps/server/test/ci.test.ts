@@ -222,6 +222,7 @@ describe('ci status', () => {
     expect(await response.json()).toEqual({
       status: 'not_enabled',
       workflowPath: '.github/workflows/nodock.yml',
+      reason: 'no webhook or CI token on this repository: connect CI to re-add them',
     });
   });
 
@@ -314,6 +315,27 @@ describe('ci enable', () => {
     expect(body.error.code).toBe('workflow_exists');
     expect(body.error.details.current).toContain('my own pipeline');
     expect(calls.putFile).toHaveLength(0);
+  });
+
+  test("re-syncs nodock's own workflow without the overwrite flag", async () => {
+    // What a repo looks like after its last service was deleted: the workflow nodock
+    // wrote is still committed, but the webhook and the CI token are gone.
+    const { client, calls } = fakeGitHub({
+      file: {
+        sha: 'blob-old',
+        content: 'name: nodock\n# Managed by nodock. Edits are detected...\n',
+      },
+    });
+    const { call } = await signedIn(client);
+
+    const response = await call('/api/repos/mohammed/milo/ci/enable', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(200);
+    expect(calls.putFile).toHaveLength(1);
+    expect(calls.hooks).toHaveLength(1);
   });
 
   test('overwrites when asked explicitly', async () => {
