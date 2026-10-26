@@ -22,11 +22,12 @@ export const WORKFLOW_VERSION = 3;
  * Railpack's build frontend — the *package* is `railpack-frontend`, not a tag of
  * `railpack`, which is why the previous ref resolved to nothing.
  *
- * Pinned to a minor version rather than a digest: nodock cannot resolve a digest when
- * it renders this file (it may have no registry access at all). Bumping this string is
- * a template change, which the CI panel reports as `out_of_date` and offers to re-sync.
+ * This is the fallback only: the workflow reads the version of the CLI that it just
+ * installed and asks for the frontend of the same version. The two are released in
+ * lockstep, and a plan written by 0.43 read by an older frontend fails with nothing
+ * but `exit code: 2`.
  */
-export const RAILPACK_FRONTEND = 'ghcr.io/railwayapp/railpack-frontend:v0.0.32';
+export const RAILPACK_FRONTEND = 'ghcr.io/railwayapp/railpack-frontend:v0.43.0';
 
 /** Since which template version a workflow can build each strategy. */
 const STRATEGY_SINCE: Record<string, number> = {
@@ -348,7 +349,13 @@ jobs:
       # ---- railpack: everything else, detected by Railpack --------------------
       - name: Install Railpack
         if: \${{ github.event.client_payload.strategy == 'railpack' }}
-        run: curl -sSL https://railpack.com/install.sh | sh -s -- -y
+        run: |
+          curl -sSL https://railpack.com/install.sh | sh -s -- -y
+          # The install script gives the newest CLI, so the frontend that reads its plan
+          # has to be the matching release: a plan and a frontend from different versions
+          # fail inside BuildKit with no message but the exit code.
+          RAILPACK_VERSION="$(railpack --version | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+' | head -n1)"
+          echo "NODOCK_RAILPACK_FRONTEND=ghcr.io/railwayapp/railpack-frontend:v\${RAILPACK_VERSION:-0.43.0}" >> "$GITHUB_ENV"
 
       - name: Prepare the Railpack plan
         if: \${{ github.event.client_payload.strategy == 'railpack' }}
@@ -366,7 +373,7 @@ jobs:
         run: |
           docker buildx build --load \\
             --tag "$IMAGE" \\
-            --build-arg BUILDKIT_SYNTAX=${RAILPACK_FRONTEND} \\
+            --build-arg BUILDKIT_SYNTAX=\${NODOCK_RAILPACK_FRONTEND} \\
             --cache-from type=gha --cache-to type=gha,mode=max \\
             --file plan.json .
           docker push "$IMAGE"

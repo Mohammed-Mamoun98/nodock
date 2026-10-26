@@ -195,8 +195,14 @@ describe('workflow', () => {
     expect(workflow).toContain('.next/standalone/server.js');
     expect(workflow).toContain("output: 'standalone'");
     expect(workflow).toContain('BUILDKIT_SYNTAX=');
-    // The package is railwayapp/railpack-frontend; `railpack:railpack-frontend` is not a tag.
-    expect(workflow).toContain('ghcr.io/railwayapp/railpack-frontend:v0.0.32');
+    // `railpack-frontend` is its own package: `railpack:railpack-frontend` is not a tag,
+    // and `railwayapp/railpack` is not a repository at all.
+    expect(workflow).toContain('ghcr.io/railwayapp/railpack-frontend:v');
+    // The tag has to follow the CLI that writes the plan, so it is read from `railpack
+    // --version` rather than pinned: a 0.43 plan read by a 0.0.x frontend dies with a
+    // bare `exit code: 2`.
+    expect(workflow).toContain('railpack --version');
+    expect(workflow).toContain('BUILDKIT_SYNTAX=${NODOCK_RAILPACK_FRONTEND}');
   });
 
   test('a workflow version gates the strategies a repo can be sent', () => {
