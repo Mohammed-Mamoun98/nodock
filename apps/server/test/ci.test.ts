@@ -176,6 +176,10 @@ describe('workflow', () => {
     expect(workflow).toContain('secrets.NODOCK_CI_TOKEN');
     expect(workflow).toContain('if: always()');
     expect(workflow).toContain('--retry 3');
+    // pnpm 12 refuses the install when a dependency's build script was never
+    // approved (ERR_PNPM_IGNORED_BUILDS); npm and yarn only warn. Left on, a repo
+    // that installs on a laptop fails in CI with an error about its lockfile.
+    expect(workflow).toContain('pnpm install --frozen-lockfile --config.strict-dep-builds=false');
   });
 
   test('carries every strategy, and the artifact upload for the static ones', () => {
