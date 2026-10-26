@@ -146,7 +146,9 @@ export default function App() {
           <CreateProjectPage onCreated={projects.reload} />
         ) : (
           <>
-            {route.name === 'dashboard' || route.name === 'service' ? (
+            {route.name === 'dashboard' ||
+            route.name === 'service' ||
+            route.name === 'variables' ? (
               <>
                 {activeProjectId ? (
                   <DashboardPage
@@ -154,7 +156,11 @@ export default function App() {
                     overview={overview.data}
                     error={overview.error as ApiError | null}
                     loading={overview.loading}
-                    selectedServiceId={route.name === 'service' ? route.serviceId : null}
+                    selectedServiceId={
+                      route.name === 'service' || route.name === 'variables'
+                        ? route.serviceId
+                        : null
+                    }
                     reload={() => {
                       overview.reload();
                       projects.reload();
@@ -163,10 +169,11 @@ export default function App() {
                 ) : null}
 
                 {/* The service is a side panel, like Railway: the canvas stays visible. */}
-                {route.name === 'service' ? (
+                {route.name === 'service' || route.name === 'variables' ? (
                   <ServicePanel
                     serviceId={route.serviceId}
                     activeEnvId={activeEnvId}
+                    initialTab={route.name === 'variables' ? 'Variables' : undefined}
                     onClose={() => {
                       window.location.hash = '/';
                       overview.reload();
@@ -189,15 +196,6 @@ export default function App() {
 
             {route.name === 'new-service' ? (
               <NewServicePage projectId={route.projectId ?? activeProjectId ?? ''} />
-            ) : null}
-
-            {route.name === 'variables' ? (
-              <ServicePanel
-                serviceId={route.serviceId}
-                activeEnvId={activeEnvId}
-                initialTab="Variables"
-                onClose={() => navigate('/')}
-              />
             ) : null}
           </>
         )}

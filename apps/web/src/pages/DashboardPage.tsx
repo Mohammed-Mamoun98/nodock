@@ -29,7 +29,7 @@ export function DashboardPage({
 
   return (
     <main className="relative flex flex-1 flex-col overflow-y-auto bg-canvas dot-grid">
-      <div className="sticky top-0 z-20 flex h-12 items-center justify-between border-b border-line bg-surface px-6">
+      <div className="sticky top-0 z-20 flex h-[52px] items-center justify-between border-b border-line bg-surface px-6">
         <span className="font-mono text-mono-xs text-text-dim">
           {overview?.project.name ?? 'project'}
           <span className="opacity-50"> · </span>
@@ -90,7 +90,7 @@ export function DashboardPage({
 
         {services.length > 0 ? (
           <>
-            <div className="mx-auto grid w-full max-w-[600px] grid-cols-1 justify-items-center gap-x-12 gap-y-8 lg:grid-cols-2">
+            <div className="mx-auto grid w-full max-w-[700px] grid-cols-1 justify-items-center gap-x-10 gap-y-8 lg:grid-cols-2">
               {visible.map((service) => (
                 <ServiceCard
                   key={service.id}
@@ -101,7 +101,7 @@ export function DashboardPage({
               {visible.length % 2 === 1 ? <div className="hidden lg:block" aria-hidden /> : null}
             </div>
 
-            <div className="mx-auto mt-auto flex w-full max-w-[600px] items-center justify-center pt-10 pb-2">
+            <div className="mx-auto mt-auto flex w-full max-w-[700px] items-center justify-center pt-10 pb-2">
               <span className="flex items-center gap-2 rounded border border-line bg-surface px-3 py-1.5">
                 <span className="h-2 w-2 rounded-full bg-lime" aria-hidden />
                 <span className="font-mono text-mono-xs text-text-dim">caddy · :443</span>

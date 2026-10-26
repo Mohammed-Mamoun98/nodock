@@ -28,10 +28,10 @@ Actions run — the UI never pretends it owns build output.
 ## Screen structure
 
 ```
-top bar (56px)      product mark · project switcher · environment pill · GHCR status · avatar
-left rail (248px)   PROJECTS (with service counts) · ENVIRONMENTS (with counts) · control-plane footer
+top bar (60px)      product mark · project switcher · environment pill · GHCR status · avatar
+left rail (64px)    icon-only: Canvas · New service · Project settings · control-plane footer
 canvas              service cards on a 24px dot grid, 1px connection lines to the caddy/ingress node
-detail panel (400px) host + tabs (Deployments | Logs | Variables | Settings) + deploy history + log stream
+detail panel (560px) host + tabs (Deployments | Logs | Variables | Settings) + deploy history + log stream
 ```
 
 Canvas is the spatial view of a project's services; the detail panel is the drill-down for the
@@ -75,9 +75,12 @@ surface steps, not elevation.
   `red #FF6B5A`, `steel #5F6B72`.
 - **Type:** Inter 400/500/600 for prose and UI labels; JetBrains Mono 400/500 for anything a
   machine produced — hosts, SHAs, branches, durations, counts, status words, logs. Scale
-  `11/13/14/15px`. Tabular numerals everywhere numbers can change.
+  `12/14/15/17/20px` (`mono-xs / ui-sm / ui-base / ui-lg / ui-xl`). Tabular numerals everywhere
+  numbers can change. Both faces are **self-hosted** (`apps/web/src/assets/fonts`, latin subset,
+  variable 400–700, ~80 KB together): no font CDN, and the same metrics on a Mac, on Linux and on
+  a phone. Nothing in the UI drops below 12px.
 - **Geometry:** radii 4px chips/nodes, 6px buttons/inputs, 8px cards/panels. Borders always 1px.
-  Rows 32px. Buttons 28px. No `rounded-full` except status dots and the avatar.
+  Rows 36px. Buttons 32px. Cards 320px wide. No `rounded-full` except status dots and the avatar.
 - **Density:** information-dense but breathable — 16/20px card padding, 12px gutters, no giant
   hero areas, no oversized page titles.
 - **Motion:** `pulse-dot` 1.6s amber for in-progress, `blink` 1s lime cursor in the log stream,

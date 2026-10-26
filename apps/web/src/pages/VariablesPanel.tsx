@@ -140,7 +140,7 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
               onChange={(event) => setNewKey(event.target.value)}
               placeholder="VARIABLE_NAME"
               aria-label="Variable name"
-              className="h-8 min-w-[140px] flex-1 rounded border border-lime/40 bg-surface-2 px-2 font-mono text-ui-sm"
+              className="h-9 min-w-[140px] flex-1 rounded border border-lime/40 bg-surface-2 px-2 font-mono text-ui-sm"
             />
             <input
               value={newValue}
@@ -150,7 +150,7 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
               }}
               placeholder="value"
               aria-label="Variable value"
-              className="h-8 min-w-[140px] flex-1 rounded border border-line bg-surface-2 px-2 font-mono text-ui-sm"
+              className="h-9 min-w-[140px] flex-1 rounded border border-line bg-surface-2 px-2 font-mono text-ui-sm"
             />
             <Button variant="primary" onClick={addRow} disabled={!newKey.trim()}>
               Add
@@ -268,7 +268,7 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
           return (
             <div
               key={row.id}
-              className="group flex items-center gap-3 border-b border-line/60 px-4 py-2 hover:bg-surface-2/30"
+              className="group flex items-center gap-3 border-b border-line/60 px-5 py-2.5 hover:bg-surface-2/30"
             >
               <input
                 value={row.key}
@@ -344,7 +344,7 @@ export function VariablesPanel({ serviceId, envId }: { serviceId: string; envId:
         })}
       </div>
 
-      <div className="flex items-center justify-between border-t border-line px-4 py-2">
+      <div className="flex items-center justify-between border-t border-line px-5 py-2.5">
         <span className="font-mono text-mono-xs text-text-dim">
           {dirty ? 'unsaved changes' : savedAt ? `saved ${savedAt}` : 'in sync'}
         </span>

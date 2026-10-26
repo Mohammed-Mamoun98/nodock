@@ -11,17 +11,17 @@ export function ServiceCard({ service, selected }: { service: ServiceView; selec
 
   return (
     <article
-      className={`flex min-h-[176px] w-full max-w-[252px] flex-col rounded-lg border bg-surface transition-colors ${
+      className={`flex min-h-[204px] w-full max-w-[320px] flex-col rounded-lg border bg-surface transition-colors ${
         selected ? 'border-line-strong border-t-lime' : 'border-line hover:border-line-strong'
       }`}
     >
-      <a href={`#/services/${service.id}`} className="flex flex-1 flex-col p-4">
-        <div className="mb-1.5 flex items-center justify-between">
-          <h3 className="font-sans text-ui-base font-medium">{service.name}</h3>
+      <a href={`#/services/${service.id}`} className="flex flex-1 flex-col p-5">
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <h3 className="truncate font-sans text-ui-lg font-semibold">{service.name}</h3>
           <span className="font-mono text-mono-xs tabular text-text-dim">{service.age}</span>
         </div>
 
-        <div className="mb-2 flex items-center gap-1.5">
+        <div className="mb-3 flex items-center gap-1.5">
           <StatusWord label={meta.label} tone={meta.tone} inFlight={meta.inFlight} />
         </div>
 
@@ -38,13 +38,13 @@ export function ServiceCard({ service, selected }: { service: ServiceView; selec
         </div>
       </a>
 
-      <div className="flex items-center justify-between border-t border-line px-4 py-2.5">
+      <div className="flex items-center justify-between border-t border-line px-5 py-3">
         {service.state === 'live' && service.host ? (
           <a
             href={`https://${service.host}`}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-[28px] items-center gap-1.5 rounded-[6px] border border-line px-3 text-ui-sm transition-colors hover:bg-surface-2"
+            className="inline-flex h-[32px] items-center gap-1.5 rounded-[6px] border border-line px-3.5 text-ui-sm transition-colors hover:bg-surface-2"
           >
             Open URL
             <Icon name="arrow-up-right" />
@@ -52,7 +52,7 @@ export function ServiceCard({ service, selected }: { service: ServiceView; selec
         ) : (
           <a
             href={`#/services/${service.id}`}
-            className={`inline-flex h-[28px] items-center gap-1.5 rounded-[6px] px-3 text-ui-sm transition-colors ${
+            className={`inline-flex h-[32px] items-center gap-1.5 rounded-[6px] px-3.5 text-ui-sm transition-colors ${
               action.kind === 'primary'
                 ? 'bg-lime font-medium text-lime-ink hover:bg-lime/90'
                 : 'border border-line text-text hover:bg-surface-2'

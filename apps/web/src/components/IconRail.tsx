@@ -25,8 +25,8 @@ export function IconRail({
   ];
 
   return (
-    <aside className="hidden w-[56px] shrink-0 flex-col items-center border-r border-line bg-surface py-3 lg:flex">
-      <nav className="flex flex-col items-center gap-1">
+    <aside className="hidden w-[64px] shrink-0 flex-col items-center border-r border-line bg-surface py-4 lg:flex">
+      <nav className="flex flex-col items-center gap-1.5">
         {items.map((item) => {
           const active = item.id === activePath;
           return (
@@ -36,13 +36,13 @@ export function IconRail({
               title={item.label}
               aria-label={item.label}
               aria-current={active ? 'page' : undefined}
-              className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors ${
+              className={`flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
                 active
                   ? 'bg-surface-2 text-lime'
                   : 'text-text-dim hover:bg-surface-2/60 hover:text-text'
               }`}
             >
-              <Icon name={item.icon} className="h-4 w-4" />
+              <Icon name={item.icon} className="h-[18px] w-[18px]" />
             </a>
           );
         })}
@@ -53,7 +53,7 @@ export function IconRail({
           title={`${projectCount} project${projectCount === 1 ? '' : 's'} · control plane ${
             controlPlaneMb === null ? '—' : `${controlPlaneMb} MB`
           }`}
-          className="flex h-9 w-9 items-center justify-center rounded-md font-mono text-[9px] text-text-dim"
+          className="flex h-10 w-10 items-center justify-center rounded-md font-mono text-[10px] text-text-dim"
         >
           {controlPlaneMb === null ? '—' : `${controlPlaneMb}`}
           <span className="ml-0.5 text-[8px] opacity-60">MB</span>

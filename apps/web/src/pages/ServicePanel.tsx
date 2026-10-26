@@ -139,7 +139,7 @@ function DeploymentCard({
       </div>
 
       <div
-        className={`flex items-center gap-2 rounded-b-md border-t px-3 py-1.5 font-mono text-mono-xs ${
+        className={`flex items-center gap-2 rounded-b-md border-t px-6 py-2 font-mono text-mono-xs ${
           tone ??
           (row.status === 'failed'
             ? 'border-red/20 bg-red/5 text-red'
@@ -314,7 +314,7 @@ export function ServicePanel({
 
   if (service.loading && !service.data) {
     return (
-      <aside className="flex w-[520px] shrink-0 items-center justify-center border-l border-line bg-surface">
+      <aside className="flex w-[560px] shrink-0 items-center justify-center border-l border-line bg-surface">
         <span className="font-mono text-mono-xs text-text-dim">loading service…</span>
       </aside>
     );
@@ -322,7 +322,7 @@ export function ServicePanel({
 
   if (service.error || !service.data) {
     return (
-      <aside className="flex w-[520px] shrink-0 flex-col items-center justify-center gap-3 border-l border-line bg-surface p-8">
+      <aside className="flex w-[560px] shrink-0 flex-col items-center justify-center gap-3 border-l border-line bg-surface p-8">
         <h2 className="text-ui-lg font-medium">
           {service.error?.status === 404
             ? `No service called ${serviceId}`
@@ -337,12 +337,12 @@ export function ServicePanel({
   const record = service.data.service;
 
   return (
-    <aside className="flex w-[520px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface">
-      <div className="flex items-start justify-between gap-3 px-5 pt-5">
+    <aside className="flex w-[560px] shrink-0 flex-col overflow-hidden border-l border-line bg-surface">
+      <div className="flex items-start justify-between gap-3 px-6 pt-5">
         <div className="flex min-w-0 flex-col gap-1">
           <div className="flex items-center gap-2">
             <Icon name="github" className="h-4 w-4 text-text-dim" />
-            <h2 className="truncate text-ui-lg font-semibold">{record.name}</h2>
+            <h2 className="truncate text-ui-xl font-semibold">{record.name}</h2>
           </div>
           <div className="flex items-center gap-2">
             <StatusWord label={meta.label} tone={meta.tone} inFlight={meta.inFlight} />
@@ -368,14 +368,14 @@ export function ServicePanel({
         </div>
       </div>
 
-      <div className="mt-3 flex items-center gap-5 border-b border-line px-5">
+      <div className="mt-3 flex items-center gap-6 border-b border-line px-6">
         {tabs.map((entry) => (
           <button
             key={entry}
             type="button"
             onClick={() => setTab(entry)}
             aria-current={tab === entry ? 'page' : undefined}
-            className={`-mb-px border-b-2 pb-2 text-ui-sm transition-colors ${
+            className={`-mb-px border-b-2 pb-2.5 text-ui-base transition-colors ${
               tab === entry
                 ? 'border-lime font-medium text-text'
                 : 'border-transparent text-text-dim hover:text-text'
@@ -387,14 +387,14 @@ export function ServicePanel({
       </div>
 
       {actionError ? (
-        <p className="mx-5 mt-3 rounded border border-red/30 bg-red/10 px-2 py-1.5 font-mono text-mono-xs text-red">
+        <p className="mx-6 mt-3 rounded border border-red/30 bg-red/10 px-2 py-1.5 font-mono text-mono-xs text-red">
           {actionError}
         </p>
       ) : null}
 
       {tab === 'Deployments' ? (
         <div className="flex flex-1 flex-col overflow-y-auto">
-          <div className="flex items-center justify-between border-b border-line px-5 py-2">
+          <div className="flex items-center justify-between border-b border-line px-6 py-2.5">
             <span className="flex min-w-0 items-center gap-1.5 font-mono text-mono-xs text-text-dim">
               <Icon name="globe" className="h-3 w-3" />
               <span className="truncate text-text">{host || 'no host'}</span>
