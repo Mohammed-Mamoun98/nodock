@@ -16,16 +16,26 @@
  * Every step that is strategy-specific is guarded, so a dockerfile build runs the
  * same five steps it always did.
  */
-export const WORKFLOW_VERSION = 2;
+export const WORKFLOW_VERSION = 3;
 
 /**
- * Railpack's build frontend. Referenced by tag rather than digest: nodock cannot
- * resolve a digest when it renders this file (it may not have network access to a
- * registry at all), and a digest baked into every new checkout would silently stop
- * receiving Railpack's fixes. Bumping this string is a template change, which the
- * CI panel already reports as `out_of_date` and offers to re-sync.
+ * Railpack's build frontend — the *package* is `railpack-frontend`, not a tag of
+ * `railpack`, which is why the previous ref resolved to nothing.
+ *
+ * Pinned to a minor version rather than a digest: nodock cannot resolve a digest when
+ * it renders this file (it may have no registry access at all). Bumping this string is
+ * a template change, which the CI panel reports as `out_of_date` and offers to re-sync.
  */
-export const RAILPACK_FRONTEND = 'ghcr.io/railwayapp/railpack:railpack-frontend';
+export const RAILPACK_FRONTEND = 'ghcr.io/railwayapp/railpack-frontend:v0.0.32';
+
+/** Since which template version a workflow can build each strategy. */
+const STRATEGY_SINCE: Record<string, number> = {
+  dockerfile: 1,
+  next: 2,
+  static: 2,
+  // v2 pointed at a frontend image that does not exist, so its railpack step always died.
+  railpack: 3,
+};
 
 export function renderWorkflow(nodockUrl: string): string {
   const base = nodockUrl.replace(/\/$/, '');
@@ -426,10 +436,16 @@ export function assertDispatchPayload(payload: DispatchPayload): DispatchPayload
 /**
  * A v2 workflow understands `strategy`; a v1 one would build the Dockerfile and
  * silently ship the wrong thing. Refusing is the smaller failure.
+ *
+ * Per strategy rather than one global version: a repo still on v2 can build next and
+ * static perfectly well, and does not deserve to be blocked from deploying while it
+ * waits for a re-sync.
  */
 export function workflowSupportsStrategy(
   version: number | null | undefined,
   strategy: string,
 ): boolean {
-  return strategy === 'dockerfile' || (version ?? 1) >= WORKFLOW_VERSION;
+  const since = STRATEGY_SINCE[strategy];
+  if (since === undefined) return true;
+  return (version ?? 1) >= since;
 }

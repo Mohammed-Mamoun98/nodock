@@ -195,6 +195,8 @@ describe('workflow', () => {
     expect(workflow).toContain('.next/standalone/server.js');
     expect(workflow).toContain("output: 'standalone'");
     expect(workflow).toContain('BUILDKIT_SYNTAX=');
+    // The package is railwayapp/railpack-frontend; `railpack:railpack-frontend` is not a tag.
+    expect(workflow).toContain('ghcr.io/railwayapp/railpack-frontend:v0.0.32');
   });
 
   test('a workflow version gates the strategies a repo can be sent', () => {
@@ -202,8 +204,12 @@ describe('workflow', () => {
     expect(workflowSupportsStrategy(null, 'dockerfile')).toBe(true);
     expect(workflowSupportsStrategy(1, 'next')).toBe(false);
     expect(workflowSupportsStrategy(1, 'static')).toBe(false);
-    expect(workflowSupportsStrategy(2, 'railpack')).toBe(true);
-    expect(WORKFLOW_VERSION).toBe(2);
+    // v2 can build next/static, but its railpack frontend ref did not exist.
+    expect(workflowSupportsStrategy(2, 'next')).toBe(true);
+    expect(workflowSupportsStrategy(2, 'static')).toBe(true);
+    expect(workflowSupportsStrategy(2, 'railpack')).toBe(false);
+    expect(workflowSupportsStrategy(3, 'railpack')).toBe(true);
+    expect(WORKFLOW_VERSION).toBe(3);
   });
 
   test('image refs are lowercased and tag per service+commit', () => {
