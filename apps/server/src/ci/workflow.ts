@@ -170,7 +170,12 @@ jobs:
         run: |
           case "$PM" in
             bun) bun install --frozen-lockfile || bun install ;;
-            pnpm) pnpm install --frozen-lockfile ;;
+            # pnpm 12 fails the whole install when any dependency has a build
+            # script the repo has not approved (ERR_PNPM_IGNORED_BUILDS), where
+            # npm and yarn only warn. Turn the strictness off so a repo that
+            # builds on a laptop also builds here; packages that really need
+            # their postinstall still work, because they ship platform packages.
+            pnpm) pnpm install --frozen-lockfile --config.strict-dep-builds=false ;;
             yarn) yarn install --immutable 2>/dev/null || yarn install ;;
             *) if [ -f package-lock.json ]; then npm ci; else npm install; fi ;;
           esac
