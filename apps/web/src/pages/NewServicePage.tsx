@@ -164,7 +164,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
               })}
             </ol>
 
-            <div className="flex flex-1 flex-col gap-5 p-8">
+            <div className="flex min-w-0 flex-1 flex-col gap-5 p-8">
               <div>
                 <label htmlFor="service-name" className="mb-2 block text-ui-sm">
                   Service name
@@ -174,7 +174,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="milo-api"
-                  className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                  className="h-9 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                 />
               </div>
 
@@ -279,7 +279,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                     id="service-branch"
                     value={branch}
                     onChange={(event) => setBranch(event.target.value)}
-                    className="h-8 w-full rounded-md border border-line bg-surface-2 px-2 font-mono text-ui-sm"
+                    className="h-9 w-full min-w-0 rounded-md border border-line bg-surface-2 px-2 font-mono text-ui-sm"
                   >
                     {branches.data.branches.map((option) => (
                       <option key={option} value={option}>
@@ -293,7 +293,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                     value={branch}
                     onChange={(event) => setBranch(event.target.value)}
                     disabled={!selected}
-                    className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm disabled:opacity-50"
+                    className="h-9 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm disabled:opacity-50"
                   />
                 )}
               </div>
@@ -312,7 +312,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                     setDockerfileOverride(null);
                   }}
                   disabled={!selected}
-                  className="h-8 w-full rounded-md border border-line bg-surface-2 px-2 font-mono text-ui-sm disabled:opacity-50"
+                  className="h-9 w-full min-w-0 rounded-md border border-line bg-surface-2 px-2 font-mono text-ui-sm disabled:opacity-50"
                 >
                   <option value="auto">
                     Auto — {detected ? detected.label : 'decide from the repository'}
@@ -338,7 +338,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                       id="dockerfile-path"
                       value={dockerfilePath}
                       onChange={(event) => setDockerfileOverride(event.target.value)}
-                      className={`h-8 w-full rounded-md border bg-surface-2 px-3 font-mono text-ui-sm ${
+                      className={`h-9 w-full rounded-md border bg-surface-2 px-3 font-mono text-ui-sm ${
                         outsideContext ? 'border-amber/50' : 'border-line'
                       }`}
                     />
@@ -368,7 +368,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                         id="context-path"
                         value={contextPath}
                         onChange={(event) => setContextOverride(event.target.value)}
-                        className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                        className="h-9 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                       />
                     </div>
                     <div className="w-[140px]">
@@ -379,7 +379,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                         id="container-port"
                         value={containerPort}
                         onChange={(event) => setPortOverride(event.target.value)}
-                        className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                        className="h-9 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                       />
                     </div>
                   </div>
@@ -399,7 +399,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                       id="output-dir"
                       value={outputDir}
                       onChange={(event) => setOutputDirOverride(event.target.value)}
-                      className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                      className="h-9 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                     />
                     <p className="mt-2 font-mono text-mono-xs text-text-dim">
                       the build fails if it produces nothing here
@@ -415,7 +415,7 @@ export function NewServicePage({ projectId }: { projectId: string }) {
                     id="container-port"
                     value={containerPort}
                     onChange={(event) => setPortOverride(event.target.value)}
-                    className="h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+                    className="h-9 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
                   />
                 </div>
               )}

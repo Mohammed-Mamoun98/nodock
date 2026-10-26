@@ -57,7 +57,7 @@ export function StatusWord({
 export function StatusChip({ label, tone }: { label: string; tone: Tone }) {
   return (
     <span
-      className={`inline-flex h-4 items-center justify-center rounded border px-1 font-mono text-[9px] uppercase ${toneBorder[tone]}`}
+      className={`inline-flex h-5 items-center justify-center rounded border px-1.5 font-mono text-[10px] uppercase ${toneBorder[tone]}`}
     >
       {label}
     </span>
@@ -66,7 +66,7 @@ export function StatusChip({ label, tone }: { label: string; tone: Tone }) {
 
 export function BranchChip({ branch }: { branch: string }) {
   return (
-    <span className="max-w-[80px] truncate rounded border border-line px-1 text-[9px] uppercase">
+    <span className="max-w-[88px] truncate rounded border border-line px-1.5 text-[10px] uppercase">
       {branch}
     </span>
   );
@@ -89,7 +89,7 @@ export function Button({
   return (
     <button
       type="button"
-      className={`inline-flex h-[28px] items-center gap-1.5 rounded-[6px] px-3 text-ui-sm transition-colors disabled:opacity-50 ${variants[variant]} ${className}`}
+      className={`inline-flex h-[32px] items-center gap-1.5 rounded-[6px] px-3.5 text-ui-sm transition-colors disabled:opacity-50 ${variants[variant]} ${className}`}
       {...rest}
     >
       {children}
@@ -111,7 +111,7 @@ export function LinkButton({
   return (
     <a
       href={to}
-      className={`inline-flex h-[28px] items-center gap-1.5 rounded-[6px] px-3 text-ui-sm transition-colors ${variants[variant]} ${className}`}
+      className={`inline-flex h-[32px] items-center gap-1.5 rounded-[6px] px-3.5 text-ui-sm transition-colors ${variants[variant]} ${className}`}
     >
       {children}
     </a>
@@ -120,7 +120,7 @@ export function LinkButton({
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h2 className="px-4 mb-2 font-mono text-mono-xs tracking-wide text-text-dim">{children}</h2>
+    <h2 className="mb-2.5 px-5 font-mono text-mono-xs tracking-wide text-text-dim">{children}</h2>
   );
 }
 

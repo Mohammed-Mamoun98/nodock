@@ -86,7 +86,7 @@ export function ProjectSettingsPage({
                 type="button"
                 onClick={() => setSection(entry.id)}
                 aria-current={active ? 'page' : undefined}
-                className={`flex h-8 items-center gap-2 rounded px-2 text-left text-ui-sm transition-colors ${
+                className={`flex h-9 items-center gap-2 rounded px-2 text-left text-ui-sm transition-colors ${
                   active
                     ? 'bg-surface-2 text-text'
                     : entry.id === 'danger'
@@ -202,7 +202,7 @@ export function ProjectSettingsPage({
                     onChange={(event) => setConfirmText(event.target.value)}
                     placeholder={`type "${projectName}" to confirm`}
                     aria-label="Type the project name to confirm deletion"
-                    className="h-8 w-[220px] rounded border border-line bg-surface-2 px-2 font-mono text-mono-xs"
+                    className="h-9 w-[220px] rounded border border-line bg-surface-2 px-2 font-mono text-mono-xs"
                   />
                   <Button
                     variant="primary"

@@ -51,7 +51,7 @@ export function TopBar({
         </div>
       ) : null}
 
-      <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+      <header className="flex h-[60px] shrink-0 items-center gap-4 border-b border-line bg-surface px-4">
         <a href="#/" className="flex shrink-0 items-center gap-2 pl-1">
           <span className="h-2 w-2 bg-lime" aria-hidden />
           <span className="font-sans text-ui-lg font-semibold">nodock</span>
@@ -95,7 +95,7 @@ export function TopBar({
           {needsReconnect ? (
             <a
               href="/auth/github"
-              className="hidden items-center gap-1.5 rounded border border-amber/30 px-2 py-1 font-mono text-mono-xs text-amber sm:flex"
+              className="hidden items-center gap-1.5 rounded border border-amber/30 px-2.5 py-1.5 font-mono text-mono-xs text-amber sm:flex"
             >
               reconnect github
             </a>
@@ -120,11 +120,11 @@ export function TopBar({
             <img
               src={avatarUrl}
               alt={login ? `${login} avatar` : ''}
-              className="h-7 w-7 rounded-full border border-line"
+              className="h-8 w-8 rounded-full border border-line"
             />
           ) : (
-            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-line bg-surface-2 text-text-dim">
-              <Icon name="github" className="h-3.5 w-3.5" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface-2 text-text-dim">
+              <Icon name="github" className="h-4 w-4" />
             </span>
           )}
         </div>

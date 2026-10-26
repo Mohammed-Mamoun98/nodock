@@ -35,7 +35,7 @@ export function RepoPicker({ repos, selected, onSelect, truncated }: RepoPickerP
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search repositories…"
           aria-label="Search repositories"
-          className="h-8 flex-1 bg-transparent font-mono text-ui-sm outline-none placeholder:text-text-dim"
+          className="h-9 flex-1 bg-transparent font-mono text-ui-sm outline-none placeholder:text-text-dim"
         />
         <span className="font-mono text-mono-xs text-text-dim">{filtered.length}</span>
       </div>

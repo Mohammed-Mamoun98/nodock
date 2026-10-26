@@ -39,7 +39,7 @@ export function CreateProjectPage({ onCreated }: { onCreated: () => void }) {
             if (event.key === 'Enter') void submit();
           }}
           placeholder="milo"
-          className="mb-4 h-8 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
+          className="mb-4 h-9 w-full rounded-md border border-line bg-surface-2 px-3 font-mono text-ui-sm"
         />
 
         {error ? (
